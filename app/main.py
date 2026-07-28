@@ -13,12 +13,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
-from app.api import routes_auth, routes_broker, routes_dashboard
+from app.api import routes_auth, routes_broker, routes_dashboard, routes_trading
 from app.brokers.alpaca import AlpacaPaperBroker
 from app.config import Settings, get_settings
 from app.core.audit import AuditCategory, AuditLog
 from app.db.base import Base
-from app.db.models import KILL_SWITCH_KEY, Operator, SystemFlag
+from app.db.models import KILL_SWITCH_KEY, ApprovalKind, Operator, SystemFlag
 from app.db.session import get_engine, session_scope
 from app.logging_config import configure_logging
 from app.rate_limit import RateLimiter
@@ -74,6 +74,21 @@ def bootstrap_database(settings: Settings) -> None:
                     payload={"email": email},
                 )
                 logger.info("bootstrap operator created")
+
+        # Mirrors the seed row in alembic/versions/7a2c4e91b3f0_..._.py -- kept as
+        # a literal here (not imported from the migration) because migrations
+        # are frozen historical artifacts and shouldn't be a runtime dependency.
+        # Needed on the SQLite fallback, which creates schema via create_all()
+        # and never runs Alembic at all.
+        if session.get(ApprovalKind, "enter:PAPER_TRADING") is None:
+            session.add(
+                ApprovalKind(
+                    code="enter:PAPER_TRADING",
+                    description=(
+                        "Human approval required to move a project into live paper trading."
+                    ),
+                )
+            )
 
 
 @asynccontextmanager
@@ -141,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_auth.router)
     app.include_router(routes_dashboard.router)
     app.include_router(routes_broker.router)
+    app.include_router(routes_trading.router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(

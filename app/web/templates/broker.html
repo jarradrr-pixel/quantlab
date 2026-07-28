@@ -1,15 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Broker</h1>
-<p class="lede">Alpaca paper account connectivity. Read-only: this page never places an order.</p>
-
-{% if not configured %}
-<div class="card">
-  <p class="muted" style="margin:0">
-    Not configured. Set QUANTLAB_ALPACA_API_KEY and QUANTLAB_ALPACA_API_SECRET to enable.
-  </p>
-</div>
-{% else %}
+<p class="lede">
+  Broker backend: <span class="tag {{ 'halt' if backend == 'mock' else 'live' }}">{{ backend }}</span>
+  &nbsp;·&nbsp; Read-only for order placement: this page never submits an order.
+</p>
 
 <div class="grid">
   <div class="card stat">
@@ -35,9 +30,8 @@
 
 <h2>Reconciliation</h2>
 <p class="muted">
-  QuantLab has no internal order ledger yet, so any position or open order Alpaca reports
-  below is untracked by QuantLab — treat it as external or manual account activity, not a
-  discrepancy against a known book.
+  A position or order below is one QuantLab's own order ledger has no record of
+  originating — external or manual account activity, not something this system traded.
 </p>
 
 {% if run %}
@@ -72,5 +66,4 @@
   <button type="submit" class="secondary">Reconcile now</button>
 </form>
 
-{% endif %}
 {% endblock %}

@@ -7,13 +7,14 @@ education, research, backtesting and paper trading.
 > path. `QUANTLAB_TRADING_MODE` accepts only `paper`; any other value is a
 > start-up failure. Nothing here is investment advice.
 
-**Status: Phase 1 of 6 complete.** The foundation — configuration, logging,
-database, orchestrator state machine, authentication and the operator console
-— is built and tested. Phase 3's Alpaca paper broker adapter has also landed
-ahead of Phase 2 (see below) — account verification and reconciliation are
-usable from `/broker`, but order submission is implemented on the adapter and
-not yet reachable from anywhere, since Phase 2's risk engine doesn't exist yet
-to approve an order before it reaches a broker. See [Roadmap](#roadmap).
+**Status: Phases 1–3 of 6 complete.** The foundation (config, logging, DB,
+orchestrator state machine, authentication, console), Phase 2 (market data,
+an MA strategy engine, a backtest/acceptance engine, a risk engine, a mock
+broker, and the approval workflow) and Phase 3 (an Alpaca paper broker
+adapter alongside the mock one) are built and tested. `CODE_GENERATION` and
+`CODE_VALIDATION` remain label-only transitions — sandboxed codegen is
+Phase 5. `PERFORMANCE_REVIEW` remains label-only too — that and strategy
+versioning are Phase 6. See [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -58,7 +59,7 @@ Compose runs `alembic upgrade head` before starting the app and binds only to
 ### Running the checks
 
 ```bash
-pytest                # 92 tests
+pytest                # 135 tests
 ruff check .          # lint
 mypy app              # strict type checking
 ```
@@ -94,10 +95,11 @@ LLM agents  ──proposals──▶  Orchestrator (FSM)  ──▶  Backtest �
 | Component | Guarantee |
 |---|---|
 | Orchestrator | Transition table is data; anything absent is refused. No stage can be skipped. |
-| Risk engine *(Phase 2)* | Pure Python. No approved decision, no order. |
-| Acceptance engine *(Phase 2)* | Deterministic verdict a model may explain but never override. |
+| Risk engine | Pure Python (`app/core/risk.py`). No approved decision, no order. |
+| Acceptance engine | Deterministic verdict (`app/core/backtest.py`) a model may explain but never override. |
+| Broker adapter | Mock by default (`app/brokers/mock.py`) or Alpaca paper (`app/brokers/alpaca.py`), selected by `QUANTLAB_BROKER_BACKEND`. Order submission always passes through the risk engine first. |
 | Audit log | Append-only, SHA-256 hash-chained, secrets redacted before storage. |
-| Human approval | Only rows written by an authenticated `Operator` count. |
+| Human approval | Only rows written by an authenticated `Operator` count — recorded via `/projects/{id}/approvals`. |
 | Kill switch | Boots engaged. Absent flag is read as engaged. |
 
 Full detail in [docs/architecture.md](docs/architecture.md).
@@ -141,6 +143,13 @@ active stage can move to `PAUSED` or `REJECTED`. `REJECTED` is terminal.
 Entering `PAPER_TRADING` needs all of: a legal edge, a released kill switch,
 and an `approved` row in `approvals` written by an authenticated operator.
 
+`STRATEGY_SPECIFICATION`, `BACKTESTING`, `RISK_REVIEW` and order submission
+inside `PAPER_TRADING` now have real engines behind them (`app/core/backtest.py`,
+`app/core/risk.py`, `app/brokers/`) rather than being a bare label move.
+`CODE_GENERATION`/`CODE_VALIDATION` (Phase 5) and `PERFORMANCE_REVIEW`
+(Phase 6) are still label-only — moving through them records a transition
+but runs no engine yet.
+
 ## Environment variables
 
 Every setting is prefixed `QUANTLAB_` and documented in `.env.example`.
@@ -159,6 +168,7 @@ a limit name fails loudly instead of silently reverting to a default.
 | `QUANTLAB_MAX_TOTAL_EXPOSURE_PERCENTAGE` | `10.0` | |
 | `QUANTLAB_MAX_DAILY_LOSS_PERCENTAGE` | `1.0` | |
 | `QUANTLAB_MAX_ORDERS_PER_DAY` | `2` | |
+| `QUANTLAB_BROKER_BACKEND` | `mock` | `mock` or `alpaca`. `alpaca` requires both Alpaca credentials set. |
 | `QUANTLAB_ALPACA_PAPER_BASE_URL` | Alpaca's paper endpoint | Start-up fails if it's anything else. |
 
 Credentials belong in a local `.env` file only. Never paste them into a chat
@@ -182,24 +192,25 @@ the grant makes it *hard*. See [docs/security.md](docs/security.md).
 | Phase | Contents | Status |
 |---|---|---|
 | 1 | Foundation: config, logging, DB, FSM, auth, console, tests | **complete** |
-| 2 | Market data, MA strategy, backtest engine, risk engine, mock broker, approvals | next |
-| 3 | Alpaca paper adapter, account verification, reconciliation | **partial** — adapter, verify, reconcile built; order submission implemented but unreachable until Phase 2's risk engine exists |
-| 4 | Research agent, citation tracking, knowledge base | |
+| 2 | Market data, MA strategy, backtest engine, risk engine, mock broker, approvals | **complete** |
+| 3 | Alpaca paper adapter, account verification, reconciliation | **complete** |
+| 4 | Research agent, citation tracking, knowledge base | next |
 | 5 | Knowledge test, hypothesis generator, sandboxed codegen | |
 | 6 | Performance review, experiment tracking, strategy versioning | |
 
-Two decisions to settle before Phase 2, both of which change the engine's
-shape:
+The two decisions the README previously flagged before Phase 2 are settled:
 
-1. **Historical data provider is unspecified.** Alpaca's own bars, yfinance and
-   a paid vendor differ in split and dividend adjustment, which changes both
-   the crossover signal and the buy-and-hold benchmark it is measured against.
-2. **The default acceptance rule and the default strategy contradict each
-   other.** A 20/100 daily crossover on a single symbol produces roughly 3–6
-   round trips per decade, so `minimum_out_of_sample_trades: 30` can never be
-   met by the reference strategy. Either the demo strategy needs a faster
-   signal or a wider universe, or the threshold needs to be per-strategy with
-   the reference run documented as an exception.
+1. **Historical data provider: yfinance.** `app/marketdata/yfinance_provider.py`,
+   cached in the `market_bars` table (`app/marketdata/service.py`). `close` is
+   split/dividend-adjusted (`auto_adjust=True`), so no separate adjusted-close
+   column exists.
+2. **Acceptance rule: per-strategy, not global.** `minimum_out_of_sample_trades`
+   is a field on `Strategy`, not a `Settings` default — a slow reference
+   strategy documents its own low trade count as an intentional exception
+   rather than failing a one-size-fits-all gate. The rule itself: accepted iff
+   the out-of-sample trade count clears that threshold **and** the strategy
+   beat its buy-and-hold benchmark over the same window. See
+   [docs/architecture.md](docs/architecture.md).
 
 ## Disclaimer
 

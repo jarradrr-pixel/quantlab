@@ -89,3 +89,7 @@ free-form Python execution.
 - No account lockout or second factor. Both are reasonable additions.
 - No log shipping. Audit records live in the same database as the data they
   describe; a compromise of that database is a compromise of both.
+- `app.core.risk.assess_order` does not enforce `max_daily_loss_percentage`.
+  Every other configured limit (position size, total exposure, order count,
+  open positions, shorting, leverage) is checked; this one would need
+  day-start equity tracking that doesn't exist yet.

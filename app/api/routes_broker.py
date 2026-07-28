@@ -12,10 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
-from app.brokers.base import BrokerAdapter, BrokerError
+from app.brokers.base import BrokerError
 from app.core.audit import AuditCategory, AuditLog
-from app.db.models import BrokerAccountSnapshot, BrokerReconciliationRun
-from app.deps import BrokerDep, DbDep, OperatorDep, get_session_data, require_csrf
+from app.db.models import BrokerAccountSnapshot, BrokerReconciliationRun, Order
+from app.deps import BrokerDep, DbDep, OperatorDep, SettingsDep, get_session_data, require_csrf
 from app.logging_config import mask_identifier
 from app.security import SessionData
 from app.web.templating import templates
@@ -24,15 +24,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["broker"])
 
 SessionDep = Annotated[SessionData | None, Depends(get_session_data)]
-
-
-def _require_broker(broker: BrokerDep) -> BrokerAdapter:
-    if broker is None:
-        raise HTTPException(status_code=409, detail="Broker is not configured.")
-    return broker
-
-
-ConfiguredBrokerDep = Annotated[BrokerAdapter, Depends(_require_broker)]
 
 
 def _csrf(session: SessionData | None) -> str:
@@ -44,7 +35,7 @@ def broker_page(
     request: Request,
     db: DbDep,
     operator: OperatorDep,
-    broker: BrokerDep,
+    settings: SettingsDep,
     session: SessionDep,
 ) -> Response:
     snapshot = db.scalars(
@@ -59,7 +50,7 @@ def broker_page(
         {
             "title": "Broker",
             "operator": operator,
-            "configured": broker is not None,
+            "backend": settings.broker_backend,
             "snapshot": snapshot,
             "run": run,
             "csrf_token": _csrf(session),
@@ -71,7 +62,7 @@ def broker_page(
 def verify_broker(
     db: DbDep,
     operator: OperatorDep,
-    broker: ConfiguredBrokerDep,
+    broker: BrokerDep,
     _: Annotated[None, Depends(require_csrf)],
 ) -> Response:
     try:
@@ -117,7 +108,7 @@ def verify_broker(
 def reconcile_broker(
     db: DbDep,
     operator: OperatorDep,
-    broker: ConfiguredBrokerDep,
+    broker: BrokerDep,
     _: Annotated[None, Depends(require_csrf)],
 ) -> Response:
     try:
@@ -135,9 +126,19 @@ def reconcile_broker(
             status_code=502, detail="Could not reconcile with the broker."
         ) from exc
 
+    # A position is "tracked" if QuantLab's own ledger has ever filled that
+    # symbol; an order is "tracked" if its broker id matches a ledger row
+    # exactly. Everything else is untracked -- activity the broker reports
+    # that QuantLab did not originate.
+    traded_symbols = {row[0] for row in db.execute(select(Order.symbol).distinct())}
+    known_broker_order_ids = {
+        row[0] for row in db.execute(select(Order.broker_order_id).distinct())
+    }
+
     position_findings: list[dict[str, str]] = [
         {"kind": "position", "symbol": p.symbol, "side": p.side, "qty": str(p.qty)}
         for p in positions
+        if p.symbol not in traded_symbols
     ]
     order_findings: list[dict[str, str]] = [
         {
@@ -149,14 +150,15 @@ def reconcile_broker(
             "broker_id": mask_identifier(o.order_id),
         }
         for o in orders
+        if o.order_id not in known_broker_order_ids
     ]
     findings: list[dict[str, str]] = position_findings + order_findings
     run = BrokerReconciliationRun(
         actor=operator.email,
         open_position_count=len(positions),
         open_order_count=len(orders),
-        untracked_position_count=len(positions),
-        untracked_order_count=len(orders),
+        untracked_position_count=len(position_findings),
+        untracked_order_count=len(order_findings),
         findings=findings,
     )
     db.add(run)

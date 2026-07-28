@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     alpaca_api_secret: SecretStr | None = None
     alpaca_paper_base_url: str = f"https://{_ALPACA_PAPER_HOST}"
 
+    # --- Broker backend (Phase 2) ----------------------------------------
+    broker_backend: Literal["mock", "alpaca"] = "mock"
+    """Which BrokerAdapter services paper trading. Explicit, not inferred from
+    credential presence -- a typo'd Alpaca key should fail start-up, not
+    silently degrade to mock simulation."""
+
     @field_validator("trading_mode")
     @classmethod
     def _reject_live_trading(cls, value: TradingMode) -> TradingMode:
@@ -148,6 +154,15 @@ class Settings(BaseSettings):
         if (self.alpaca_api_key is None) != (self.alpaca_api_secret is None):
             raise ValueError(
                 "alpaca_api_key and alpaca_api_secret must both be set, or neither."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _alpaca_backend_requires_credentials(self) -> Settings:
+        if self.broker_backend == "alpaca" and not self.broker_configured:
+            raise ValueError(
+                "broker_backend='alpaca' requires alpaca_api_key and alpaca_api_secret "
+                "to both be set."
             )
         return self
 

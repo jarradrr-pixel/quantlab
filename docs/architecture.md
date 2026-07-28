@@ -16,18 +16,74 @@ produce structured proposals; deterministic code decides.
 
 An agent's output reaching the broker requires passing through the schema
 validator, the acceptance engine, a human approval, the risk engine and the
-kill-switch check. There is no path around any of them.
+kill-switch check. There is no path around any of them. (Agents themselves —
+the LLM side of this table — are Phase 4+; today every one of these steps is
+triggered by an authenticated operator through the console, which is a
+stricter starting point than the eventual agent-driven pipeline.)
 
-### Broker adapter (Phase 3)
+### Backtest and acceptance engine (Phase 2)
 
-`app.brokers.alpaca.AlpacaPaperBroker` implements `get_account`,
-`list_positions`, `list_open_orders` and `submit_order` against Alpaca's paper
-API, and is unit-tested directly. **No route calls `submit_order`.** The risk
-engine that would approve an order before it reaches a broker is Phase 2 work
-and does not exist yet, so nothing in the console can place an order today —
-only verify the connection (`/broker/verify`) and read back positions/open
-orders (`/broker/reconcile`). A later phase wires the risk engine's approved
-output into `submit_order`.
+`app.core.backtest.simulate_sma_crossover` is a long-only SMA crossover
+simulator: a bullish cross (fast SMA above slow) opens a full position, a
+bearish cross closes it, and — to avoid look-ahead bias — a cross confirmed
+using data through bar `i` executes at bar `i + 1`'s open, not bar `i`'s
+close. Equity is tracked as a base-100 index so `total_return_pct` includes
+mark-to-market on a position still open when the window ends, not just
+closed trades.
+
+Out-of-sample split is a fixed 70/30 by bar count: the last 30% of bars are
+"out-of-sample," and a trade counts there if its entry falls on or after that
+split date. `app.core.backtest.evaluate_acceptance` accepts a backtest iff:
+
+1. the out-of-sample trade count clears the strategy's own
+   `minimum_out_of_sample_trades` (a field on `Strategy`, not a global
+   default — see the README's roadmap section for why), **and**
+2. `total_return_pct` beats `benchmark_return_pct` (buy-and-hold over the
+   same window).
+
+### Risk engine (Phase 2)
+
+`app.core.risk` has two entry points, both pure functions:
+
+- `assess_strategy` — run at the `RISK_REVIEW` stage. Checks the strategy's
+  symbol/timeframe against `allowed_symbols`/`allowed_timeframes`, and that
+  `fast_window < slow_window`.
+- `assess_order` — run immediately before every `submit_order` call, using
+  live account/position data from whichever broker is active. Checks the
+  symbol allowlist, `max_orders_per_day` (counted from that project's `Order`
+  rows today), `max_open_positions` (opening a new symbol beyond the limit is
+  refused), `max_position_percentage`/`max_total_exposure_percentage` against
+  the proposed order's notional, buying power vs `allow_leverage`, and
+  short-selling vs `allow_shorting`.
+
+**Known limitation**: `max_daily_loss_percentage` is not enforced by
+`assess_order` — it would need day-start equity tracking that doesn't exist
+yet. See [docs/security.md](docs/security.md)'s "Known limitations."
+
+### Broker adapters (Phase 2 mock, Phase 3 Alpaca)
+
+`app.brokers.alpaca.AlpacaPaperBroker` and `app.brokers.mock.MockBroker` both
+implement `get_account`, `list_positions`, `list_open_orders` and
+`submit_order` against the same `BrokerAdapter` interface —
+`QUANTLAB_BROKER_BACKEND` (`mock` by default, or `alpaca`) selects which one
+`app.deps.get_broker` constructs, and the choice is explicit, never inferred
+from credential presence (a typo'd Alpaca key must fail start-up, not
+silently degrade to mock simulation).
+
+`MockBroker` holds no external state of its own — it reads and writes the
+account-wide `mock_fills` table directly, filling orders synchronously at the
+latest cached `market_bars` price (or refusing with `BrokerOrderRejectedError`
+if none is cached). `AlpacaPaperBroker` calls the real (paper) API instead.
+Either way, `POST /projects/{id}/orders` is the only route that calls
+`submit_order`, and only after `risk.assess_order` approves — this is what
+makes the broker adapter's "never receive an unapproved order" guarantee
+real rather than aspirational.
+
+The project's own internal ledger — the `orders` table, written by the route
+after a successful `submit_order` call, never by an adapter directly — is
+also what `/broker/reconcile` (Phase 3) diffs broker-reported positions/open
+orders against to compute `untracked_position_count`/`untracked_order_count`,
+closing the gap Phase 3 originally documented ("no ledger to diff against").
 
 ## Layers
 
@@ -41,8 +97,11 @@ app/
 ├── core/
 │   ├── states.py        The transition table (data, not branches).
 │   ├── state_machine.py Orchestrator: table check, guards, audit, commit.
-│   └── audit.py         Hash-chained append-only log.
-├── brokers/           Broker adapters (Alpaca paper only; see Phase 3 note above).
+│   ├── audit.py         Hash-chained append-only log.
+│   ├── backtest.py      SMA crossover simulation + acceptance rule.
+│   └── risk.py          Strategy- and order-level risk checks.
+├── brokers/           BrokerAdapter + AlpacaPaperBroker + MockBroker.
+├── marketdata/        MarketDataProvider + YFinanceProvider + the bar cache.
 ├── api/               HTTP routes. Thin; no domain logic.
 └── web/               Jinja2 console.
 ```

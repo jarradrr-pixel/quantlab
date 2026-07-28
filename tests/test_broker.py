@@ -263,24 +263,12 @@ def _fake_account() -> BrokerAccount:
     )
 
 
-def test_broker_page_reports_not_configured_by_default(
+def test_broker_page_defaults_to_the_mock_backend(
     signed_in_client: TestClient,
 ) -> None:
     response = signed_in_client.get("/broker")
     assert response.status_code == 200
-    assert "Not configured" in response.text
-
-
-def test_verify_returns_409_when_broker_not_configured(
-    signed_in_client: TestClient,
-) -> None:
-    # The unconfigured /broker page renders no verify form (nothing to submit),
-    # so there is no CSRF token to fetch -- the route itself must still refuse
-    # a direct POST, which is what this asserts.
-    response = signed_in_client.post(
-        "/broker/verify", data={}, follow_redirects=False
-    )
-    assert response.status_code == 409
+    assert "mock" in response.text
 
 
 def test_broker_actions_require_csrf(signed_in_client: TestClient) -> None:

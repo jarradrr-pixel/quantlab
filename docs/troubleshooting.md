@@ -51,6 +51,19 @@ released kill switch and a recorded approval.
 endpoint. This is not configurable to a live endpoint — there is no live
 trading code path, by design.
 
-**`Broker is not configured` (409 on `/broker/verify` or `/broker/reconcile`)**
-`QUANTLAB_ALPACA_API_KEY`/`QUANTLAB_ALPACA_API_SECRET` are unset. Both must be
-set together; see `.env.example`.
+**`broker_backend='alpaca' requires alpaca_api_key and alpaca_api_secret to both be set`**
+`QUANTLAB_BROKER_BACKEND=alpaca` was set without both Alpaca credentials.
+Either set both, or leave `QUANTLAB_BROKER_BACKEND` unset (default `mock`) to
+paper-trade against the built-in simulator with no external account needed.
+
+**`No cached market data for SYMBOL; run a backtest for it first`**
+Order submission (`POST /projects/{id}/orders`) prices the order off the
+latest cached bar in `market_bars`. Run a backtest for that symbol first (it
+fetches and caches bars as a side effect), or wait for `MarketDataService` to
+be called some other way — nothing populates the cache automatically.
+
+**Transition to `RISK_REVIEW`/`AWAITING_HUMAN_APPROVAL` succeeds but the page shows no verdict**
+`POST /projects/{id}/risk-review` and `POST /projects/{id}/backtests` are
+separate actions from the plain state transition — moving the FSM forward
+does not itself run the backtest or risk engine. Use the "Run backtest" /
+"Run risk review" buttons on the project page.

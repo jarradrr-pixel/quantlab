@@ -9,9 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.brokers.alpaca import AlpacaPaperBroker
 from app.brokers.base import BrokerAdapter
+from app.brokers.mock import MockBroker
 from app.config import Settings, get_settings
 from app.db.models import Operator
 from app.db.session import get_db
+from app.marketdata.base import MarketDataProvider
+from app.marketdata.service import MarketDataService
+from app.marketdata.yfinance_provider import YFinanceProvider
 from app.security import CSRF_FIELD_NAME, SessionData, SessionManager, csrf_tokens_match
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -76,10 +80,19 @@ def require_csrf(
 OperatorDep = Annotated[Operator, Depends(require_operator)]
 
 
-def get_broker(request: Request, settings: SettingsDep) -> BrokerAdapter | None:
-    """Return the cached broker adapter, or None if Alpaca isn't configured."""
-    if not settings.broker_configured:
-        return None
+def get_broker(request: Request, settings: SettingsDep, db: DbDep) -> BrokerAdapter:
+    """Return the active broker adapter -- there is always one.
+
+    Explicit ``settings.broker_backend`` selects it, never inferred from
+    credential presence (see ``Settings._alpaca_backend_requires_credentials``):
+    a typo'd Alpaca key should fail start-up, not silently degrade to mock
+    simulation.
+    """
+    if settings.broker_backend == "mock":
+        # Cheap to build, no network client to reuse, and `db` is per-request
+        # anyway -- unlike AlpacaPaperBroker, nothing here is worth caching.
+        return MockBroker(db)
+
     cached = getattr(request.app.state, "broker_adapter", None)
     if cached is None:
         assert settings.alpaca_api_key is not None  # narrowed by broker_configured
@@ -93,4 +106,20 @@ def get_broker(request: Request, settings: SettingsDep) -> BrokerAdapter | None:
     return cached
 
 
-BrokerDep = Annotated[BrokerAdapter | None, Depends(get_broker)]
+BrokerDep = Annotated[BrokerAdapter, Depends(get_broker)]
+
+
+def get_market_data_provider() -> MarketDataProvider:
+    return YFinanceProvider()
+
+
+MarketDataProviderDep = Annotated[MarketDataProvider, Depends(get_market_data_provider)]
+
+
+def get_market_data_service(
+    db: DbDep, provider: MarketDataProviderDep
+) -> MarketDataService:
+    return MarketDataService(db, provider)
+
+
+MarketDataDep = Annotated[MarketDataService, Depends(get_market_data_service)]

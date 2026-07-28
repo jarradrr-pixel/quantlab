@@ -1,20 +1,23 @@
-"""ORM models for Phase 1.
+"""ORM models.
 
-Trading-specific tables (strategies, backtests, orders) arrive in Phase 2. The
-tables here are the ones every later phase depends on: operators, projects,
-the state history, human approvals and the audit chain.
+Phase 1: operators, projects, the state history, human approvals and the
+audit chain. Phase 3: broker account snapshots and reconciliation runs.
+Phase 2: market data cache, strategies, backtests, risk assessments and the
+internal order ledger.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -253,4 +256,169 @@ class BrokerReconciliationRun(Base):
     findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONType, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False, index=True
+    )
+
+
+class MarketBar(Base):
+    """One cached OHLCV bar. ``close`` is split/dividend adjusted (yfinance
+    ``auto_adjust=True``) -- there is no separate adjusted-close column."""
+
+    __tablename__ = "market_bars"
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol", "timeframe", "timestamp", name="uq_market_bars_symbol_timeframe_ts"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    open: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    high: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    low: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    close: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+
+class Strategy(Base):
+    """A strategy specification. Append-only: a respec inserts a new version
+    rather than updating in place; "current" is the latest by ``created_at``.
+    """
+
+    __tablename__ = "strategies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(20), nullable=False)
+    fast_window: Mapped[int] = mapped_column(Integer, nullable=False)
+    slow_window: Mapped[int] = mapped_column(Integer, nullable=False)
+    minimum_out_of_sample_trades: Mapped[int] = mapped_column(Integer, nullable=False)
+    """Per-strategy acceptance threshold -- deliberately not a global default;
+    a slow reference strategy documents its low trade count as an explicit,
+    intentional exception here rather than failing a one-size-fits-all gate."""
+
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+
+
+class Backtest(Base):
+    """One backtest run of a strategy over a historical date range."""
+
+    __tablename__ = "backtests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    strategy_id: Mapped[str] = mapped_column(
+        ForeignKey("strategies.id", ondelete="RESTRICT"), nullable=False
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    total_return_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    benchmark_return_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    max_drawdown_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    trade_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    out_of_sample_trade_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    verdict_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    equity_curve: Mapped[list[dict[str, Any]]] = mapped_column(JSONType, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+    strategy: Mapped[Strategy] = relationship()
+
+
+class RiskAssessment(Base):
+    """One deterministic risk-engine verdict against a strategy."""
+
+    __tablename__ = "risk_assessments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    backtest_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backtests.id", ondelete="RESTRICT"), nullable=True
+    )
+    approved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSONType, nullable=False)
+    checked_limits: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+
+
+class Order(Base):
+    """The internal order ledger -- what QuantLab itself submitted, whether
+    filled by ``MockBroker`` or ``AlpacaPaperBroker``. This is what Phase 3's
+    reconciliation compares broker-reported positions/orders against."""
+
+    __tablename__ = "orders"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    strategy_id: Mapped[str | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="RESTRICT"), nullable=True
+    )
+    broker_order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)
+    qty: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    time_in_force: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    filled_avg_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
+    filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+    strategy: Mapped[Strategy | None] = relationship()
+
+
+class MockFill(Base):
+    """MockBroker's own account-wide fill ledger.
+
+    Deliberately separate from ``Order``: a broker (real or mock) doesn't
+    know about QuantLab's projects, only about fills. ``MockBroker`` reads
+    and writes this table exactly as ``AlpacaPaperBroker`` reads and writes
+    Alpaca's own external books -- ``Order`` is always QuantLab's own mirror
+    of what a broker reported, created by the route layer, never by an
+    adapter directly.
+    """
+
+    __tablename__ = "mock_fills"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)
+    qty: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    filled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
     )

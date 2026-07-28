@@ -36,6 +36,148 @@
 {% endif %}
 </div>
 
+<h2>Strategy</h2>
+<div class="card">
+{% if strategy %}
+<p class="mono" style="margin-top:0">
+  v{{ strategy.version }} · {{ strategy.symbol }} · {{ strategy.timeframe }} ·
+  fast {{ strategy.fast_window }} / slow {{ strategy.slow_window }} ·
+  min out-of-sample trades {{ strategy.minimum_out_of_sample_trades }}
+</p>
+{% else %}
+<p class="muted" style="margin-top:0">No strategy specified yet.</p>
+{% endif %}
+<form method="post" action="/projects/{{ project.id }}/strategy">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="s_name">Name</label>
+  <input id="s_name" type="text" name="name" required maxlength="200">
+  <label for="s_symbol">Symbol</label>
+  <input id="s_symbol" type="text" name="symbol" required maxlength="20" value="{{ strategy.symbol if strategy }}">
+  <label for="s_timeframe">Timeframe</label>
+  <input id="s_timeframe" type="text" name="timeframe" required value="{{ strategy.timeframe if strategy else '1Day' }}">
+  <label for="s_fast">Fast window</label>
+  <input id="s_fast" type="text" inputmode="numeric" name="fast_window" required value="{{ strategy.fast_window if strategy else 20 }}">
+  <label for="s_slow">Slow window</label>
+  <input id="s_slow" type="text" inputmode="numeric" name="slow_window" required value="{{ strategy.slow_window if strategy else 100 }}">
+  <label for="s_min_oos">Minimum out-of-sample trades</label>
+  <input id="s_min_oos" type="text" inputmode="numeric" name="minimum_out_of_sample_trades" required value="{{ strategy.minimum_out_of_sample_trades if strategy else 30 }}">
+  <p class="muted" style="font-size:13px">
+    A slow, low-frequency crossover may need this lowered from the 30-trade default —
+    document why in the strategy name if so.
+  </p>
+  <p style="margin:18px 0 0"><button type="submit">{{ "Respecify" if strategy else "Specify strategy" }}</button></p>
+</form>
+</div>
+
+<h2>Backtest</h2>
+<div class="card">
+{% if backtests %}
+{% set b = backtests[0] %}
+<p class="mono" style="margin-top:0">
+  <span class="tag {{ 'live' if b.accepted else 'stop' }}">{{ "ACCEPTED" if b.accepted else "REJECTED" }}</span>
+  {{ b.start_date }} → {{ b.end_date }} ·
+  return {{ b.total_return_pct }}% vs benchmark {{ b.benchmark_return_pct }}% ·
+  drawdown {{ b.max_drawdown_pct }}% ·
+  {{ b.trade_count }} trade(s), {{ b.out_of_sample_trade_count }} out-of-sample
+</p>
+<p class="muted" style="font-size:13px">{{ b.verdict_reason }}</p>
+{% else %}
+<p class="muted" style="margin-top:0">No backtest run yet.</p>
+{% endif %}
+<form method="post" action="/projects/{{ project.id }}/backtests">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="bt_start">Start date (blank = 10 years back)</label>
+  <input id="bt_start" type="date" name="start_date">
+  <label for="bt_end">End date (blank = yesterday)</label>
+  <input id="bt_end" type="date" name="end_date">
+  <p style="margin:18px 0 0"><button type="submit" {{ "disabled" if not strategy }}>Run backtest</button></p>
+</form>
+</div>
+
+<h2>Risk review</h2>
+<div class="card">
+{% if risk_assessments %}
+{% set r = risk_assessments[0] %}
+<p class="mono" style="margin-top:0">
+  <span class="tag {{ 'live' if r.approved else 'stop' }}">{{ "APPROVED" if r.approved else "REFUSED" }}</span>
+  {{ r.created_at|timestamp }}
+</p>
+{% if r.reasons %}<ul class="muted" style="margin:6px 0">{% for reason in r.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}
+{% else %}
+<p class="muted" style="margin-top:0">No risk review run yet.</p>
+{% endif %}
+<form method="post" action="/projects/{{ project.id }}/risk-review">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p style="margin:18px 0 0"><button type="submit" {{ "disabled" if not strategy }}>Run risk review</button></p>
+</form>
+</div>
+
+<h2>Approvals</h2>
+<div class="card">
+<table>
+  <tr><th>When</th><th>Kind</th><th>Decision</th><th>Operator</th><th>Notes</th></tr>
+  {% for a in approvals %}
+  <tr><td class="mono">{{ a.created_at|timestamp }}</td><td class="mono">{{ a.kind }}</td>
+      <td><span class="tag {{ 'live' if a.decision == 'approved' else 'stop' }}">{{ a.decision }}</span></td>
+      <td>{{ a.operator.email }}</td><td>{{ a.notes or "" }}</td></tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">No approvals recorded yet.</td></tr>
+  {% endfor %}
+</table>
+<form method="post" action="/projects/{{ project.id }}/approvals" style="margin-top:16px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="ap_kind">Kind</label>
+  <select id="ap_kind" name="kind">
+    {% for k in approval_kinds %}<option value="{{ k.code }}">{{ k.code }}</option>{% endfor %}
+  </select>
+  <label for="ap_decision">Decision</label>
+  <select id="ap_decision" name="decision">
+    <option value="approved">approved</option>
+    <option value="rejected">rejected</option>
+  </select>
+  <label for="ap_notes">Notes</label>
+  <input id="ap_notes" type="text" name="notes" maxlength="500">
+  <p style="margin:18px 0 0"><button type="submit">Record decision</button></p>
+</form>
+</div>
+
+{% if current_state.value == "PAPER_TRADING" %}
+<h2>Submit order</h2>
+<div class="card">
+<form method="post" action="/projects/{{ project.id }}/orders">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="o_symbol">Symbol</label>
+  <input id="o_symbol" type="text" name="symbol" required maxlength="20" value="{{ strategy.symbol if strategy }}">
+  <label for="o_side">Side</label>
+  <select id="o_side" name="side">
+    <option value="buy">buy</option>
+    <option value="sell">sell</option>
+  </select>
+  <label for="o_qty">Quantity</label>
+  <input id="o_qty" type="text" inputmode="decimal" name="qty" required>
+  <p class="muted" style="font-size:13px">
+    Priced off the latest cached market bar and gated by the risk engine — refused
+    orders are still recorded in the audit log.
+  </p>
+  <p style="margin:18px 0 0"><button type="submit">Submit order</button></p>
+</form>
+</div>
+
+<h2>Orders</h2>
+<div class="card" style="padding:0">
+<table>
+  <tr><th>When</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Status</th><th>Fill price</th></tr>
+  {% for o in orders %}
+  <tr><td class="mono">{{ o.created_at|timestamp }}</td><td>{{ o.symbol }}</td><td>{{ o.side }}</td>
+      <td class="mono">{{ o.qty }}</td><td><span class="tag live">{{ o.status }}</span></td>
+      <td class="mono">{{ o.filled_avg_price or "—" }}</td></tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No orders submitted yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
 <h2>State history</h2>
 <div class="card" style="padding:0">
 <table>

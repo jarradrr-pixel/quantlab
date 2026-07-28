@@ -17,7 +17,18 @@ from sqlalchemy import func, select
 from app.core.audit import AuditCategory, AuditLog
 from app.core.state_machine import Orchestrator, TransitionError
 from app.core.states import PIPELINE_ORDER, TRANSITIONS, ProjectState
-from app.db.models import KILL_SWITCH_KEY, AuditEvent, Project, SystemFlag
+from app.db.models import (
+    KILL_SWITCH_KEY,
+    Approval,
+    ApprovalKind,
+    AuditEvent,
+    Backtest,
+    Order,
+    Project,
+    RiskAssessment,
+    Strategy,
+    SystemFlag,
+)
 from app.deps import DbDep, OperatorDep, SettingsDep, get_session_data, require_csrf
 from app.security import SessionData
 from app.web.templating import templates
@@ -105,6 +116,41 @@ def project_detail(
         raise HTTPException(status_code=404, detail="Project not found.")
 
     current = ProjectState(project.state)
+    strategy = db.scalars(
+        select(Strategy)
+        .where(Strategy.project_id == project_id)
+        .order_by(Strategy.version.desc())
+    ).first()
+    backtests = list(
+        db.scalars(
+            select(Backtest)
+            .where(Backtest.project_id == project_id)
+            .order_by(Backtest.created_at.desc())
+        )
+    )
+    risk_assessments = list(
+        db.scalars(
+            select(RiskAssessment)
+            .where(RiskAssessment.project_id == project_id)
+            .order_by(RiskAssessment.created_at.desc())
+        )
+    )
+    approvals = list(
+        db.scalars(
+            select(Approval)
+            .where(Approval.project_id == project_id)
+            .order_by(Approval.created_at.desc())
+        )
+    )
+    orders = list(
+        db.scalars(
+            select(Order)
+            .where(Order.project_id == project_id)
+            .order_by(Order.created_at.desc())
+        )
+    )
+    approval_kinds = list(db.scalars(select(ApprovalKind)))
+
     return templates.TemplateResponse(
         request,
         "project.html",
@@ -116,6 +162,12 @@ def project_detail(
             "current_state": current,
             "available_targets": sorted(t.value for t in TRANSITIONS[current]),
             "transitions": list(reversed(project.transitions)),
+            "strategy": strategy,
+            "backtests": backtests,
+            "risk_assessments": risk_assessments,
+            "approvals": approvals,
+            "orders": orders,
+            "approval_kinds": approval_kinds,
             "csrf_token": _csrf(session),
         },
     )
