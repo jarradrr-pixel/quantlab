@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:380px;margin:40px auto">
+  <h1>Sign in</h1>
+  <p class="lede">Operator access to the research console.</p>
+  {% if error %}<div class="flash">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="card">
+    <label for="email">Email</label>
+    <input id="email" type="email" name="email" required autocomplete="username">
+    <label for="password">Password</label>
+    <input id="password" type="password" name="password" required autocomplete="current-password">
+    <p style="margin:18px 0 0"><button type="submit">Sign in</button></p>
+  </form>
+</div>
+{% endblock %}

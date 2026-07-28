@@ -1,0 +1,115 @@
+{# Operator console layout. Dense, legible, instrument-panel rather than marketing. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · QuantLab</title>
+<style>
+  :root {
+    --ink: #12212b;
+    --ink-soft: #4a5f6d;
+    --paper: #f7f8f7;
+    --surface: #ffffff;
+    --rule: #d6dde0;
+    --signal: #0f6d76;
+    --halt: #b4531a;
+    --stop: #96313a;
+    --live: #2f6b3f;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  }
+  a { color: var(--signal); }
+  .banner {
+    background: var(--ink); color: #eef3f4; padding: 8px 20px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .banner strong { color: #ffd9a0; }
+  header.bar {
+    display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap;
+    padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--rule);
+  }
+  header.bar .brand { font-family: var(--mono); font-weight: 600; letter-spacing: -.02em; }
+  header.bar nav { display: flex; gap: 18px; flex: 1; font-size: 14px; }
+  header.bar nav a { text-decoration: none; color: var(--ink-soft); }
+  header.bar nav a:hover, header.bar nav a:focus-visible { color: var(--signal); }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
+  h2 { font-size: 15px; margin: 32px 0 10px; text-transform: uppercase;
+       letter-spacing: .08em; color: var(--ink-soft); font-family: var(--mono); }
+  .lede { color: var(--ink-soft); margin: 0 0 8px; }
+  .card { background: var(--surface); border: 1px solid var(--rule); padding: 18px 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-family: var(--mono); font-size: 11px;
+       text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft);
+       border-bottom: 1px solid var(--rule); padding: 8px 10px; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  td.mono, .mono { font-family: var(--mono); font-size: 13px; }
+  .tag { font-family: var(--mono); font-size: 11px; padding: 2px 7px;
+         border: 1px solid var(--rule); letter-spacing: .05em; white-space: nowrap; }
+  .tag.halt { color: var(--halt); border-color: var(--halt); }
+  .tag.stop { color: var(--stop); border-color: var(--stop); }
+  .tag.live { color: var(--live); border-color: var(--live); }
+  label { display: block; font-size: 13px; color: var(--ink-soft); margin: 12px 0 4px; }
+  input[type=text], input[type=email], input[type=password], textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--rule);
+    font-family: inherit; font-size: 14px; background: var(--surface); color: var(--ink);
+  }
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--signal); outline-offset: 1px;
+  }
+  button {
+    font-family: var(--mono); font-size: 13px; padding: 8px 16px; cursor: pointer;
+    border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+  }
+  button.secondary { background: transparent; color: var(--ink); }
+  button.danger { background: var(--stop); border-color: var(--stop); }
+  .rail { display: flex; flex-wrap: wrap; gap: 2px; margin: 14px 0 4px; }
+  .rail .step {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+    padding: 5px 9px; border: 1px solid var(--rule); color: #9aa8ae; background: var(--surface);
+  }
+  .rail .step.done { color: var(--ink-soft); border-color: var(--ink-soft); }
+  .rail .step.current { color: var(--surface); background: var(--signal); border-color: var(--signal); }
+  .flash { border-left: 3px solid var(--halt); padding: 10px 14px;
+           background: #fdf6ee; font-size: 14px; margin-bottom: 16px; }
+  .muted { color: var(--ink-soft); }
+  pre { font-family: var(--mono); font-size: 12px; background: #f1f4f5;
+        padding: 10px; overflow-x: auto; margin: 0; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .stat .n { font-family: var(--mono); font-size: 26px; }
+  .stat .k { font-size: 12px; color: var(--ink-soft); text-transform: uppercase;
+             letter-spacing: .07em; font-family: var(--mono); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="banner">
+  Research and <strong>paper trading only</strong> · no live brokerage connection · not investment advice
+</div>
+{% if operator %}
+<header class="bar">
+  <span class="brand">QuantLab</span>
+  <nav>
+    <a href="/">Overview</a>
+    <a href="/broker">Broker</a>
+    <a href="/audit">Audit log</a>
+    <a href="/settings">Settings</a>
+    <a href="/kill-switch">Kill switch</a>
+  </nav>
+  <form method="post" action="/logout" style="margin:0">
+    <button class="secondary" type="submit">Sign out</button>
+  </form>
+</header>
+{% endif %}
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Audit log</h1>
+<p class="lede">Append-only and hash-chained. Each entry commits to its predecessor.</p>
+
+<div class="card" style="margin-bottom:18px">
+  <span class="tag {{ 'live' if verification.valid else 'stop' }}">
+    {{ "CHAIN INTACT" if verification.valid else "CHAIN BROKEN" }}
+  </span>
+  <span class="mono" style="margin-left:10px">{{ verification.entries_checked }} entries verified</span>
+  {% if not verification.valid %}
+  <p style="margin:10px 0 0">{{ verification.detail }} (sequence {{ verification.first_invalid_sequence }}).</p>
+  {% endif %}
+</div>
+
+<div class="card" style="padding:0">
+<table>
+  <tr><th>#</th><th>When</th><th>Category</th><th>Action</th><th>Actor</th><th>Hash</th></tr>
+  {% for e in events %}
+  <tr>
+    <td class="mono">{{ e.sequence }}</td>
+    <td class="mono">{{ e.created_at|timestamp }}</td>
+    <td><span class="tag">{{ e.category }}</span></td>
+    <td>{{ e.action }}
+      {% if e.payload %}<pre style="margin-top:6px">{{ e.payload|pretty_json }}</pre>{% endif %}</td>
+    <td>{{ e.actor }}</td>
+    <td class="mono">{{ e.entry_hash|short_hash }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No audit entries yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

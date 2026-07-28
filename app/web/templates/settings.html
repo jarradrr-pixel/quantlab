@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+<p class="lede">Effective limits, read-only. Change them via environment variables and restart. Secrets are never displayed.</p>
+<div class="card" style="padding:0">
+<table>
+  <tr><th>Setting</th><th>Value</th></tr>
+  <tr><td>Environment</td><td class="mono">{{ settings_obj.environment.value }}</td></tr>
+  <tr><td>Trading mode</td><td class="mono">{{ settings_obj.trading_mode.value }}</td></tr>
+  <tr><td>Human approval required</td><td class="mono">{{ settings_obj.require_human_approval }}</td></tr>
+  <tr><td>Allowed symbols</td><td class="mono">{{ settings_obj.allowed_symbols|join(", ") }}</td></tr>
+  <tr><td>Allowed timeframes</td><td class="mono">{{ settings_obj.allowed_timeframes|join(", ") }}</td></tr>
+  <tr><td>Max position</td><td class="mono">{{ settings_obj.max_position_percentage }}% of equity</td></tr>
+  <tr><td>Max total exposure</td><td class="mono">{{ settings_obj.max_total_exposure_percentage }}%</td></tr>
+  <tr><td>Max daily loss</td><td class="mono">{{ settings_obj.max_daily_loss_percentage }}%</td></tr>
+  <tr><td>Max orders per day</td><td class="mono">{{ settings_obj.max_orders_per_day }}</td></tr>
+  <tr><td>Max open positions</td><td class="mono">{{ settings_obj.max_open_positions }}</td></tr>
+  <tr><td>Shorting</td><td class="mono">{{ "allowed" if settings_obj.allow_shorting else "blocked" }}</td></tr>
+  <tr><td>Leverage</td><td class="mono">{{ "allowed" if settings_obj.allow_leverage else "blocked" }}</td></tr>
+</table>
+</div>
+{% endblock %}

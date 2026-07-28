@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Broker</h1>
+<p class="lede">Alpaca paper account connectivity. Read-only: this page never places an order.</p>
+
+{% if not configured %}
+<div class="card">
+  <p class="muted" style="margin:0">
+    Not configured. Set QUANTLAB_ALPACA_API_KEY and QUANTLAB_ALPACA_API_SECRET to enable.
+  </p>
+</div>
+{% else %}
+
+<div class="grid">
+  <div class="card stat">
+    <div class="k">Status</div>
+    <div class="n">
+      <span class="tag {{ 'halt' if snapshot and snapshot.trading_blocked else 'live' }}">
+        {{ snapshot.account_status if snapshot else "not verified" }}
+      </span>
+    </div>
+  </div>
+  <div class="card stat"><div class="k">Cash</div><div class="n">{{ snapshot.cash if snapshot else "—" }}</div></div>
+  <div class="card stat"><div class="k">Buying power</div><div class="n">{{ snapshot.buying_power if snapshot else "—" }}</div></div>
+  <div class="card stat">
+    <div class="k">Last verified</div>
+    <div class="n mono" style="font-size:14px">{{ snapshot.created_at|timestamp if snapshot else "never" }}</div>
+  </div>
+</div>
+
+<form method="post" action="/broker/verify" style="margin-top:20px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Verify connection</button>
+</form>
+
+<h2>Reconciliation</h2>
+<p class="muted">
+  QuantLab has no internal order ledger yet, so any position or open order Alpaca reports
+  below is untracked by QuantLab — treat it as external or manual account activity, not a
+  discrepancy against a known book.
+</p>
+
+{% if run %}
+<p class="mono" style="font-size:13px">
+  Last run {{ run.created_at|timestamp }} ·
+  {{ run.open_position_count }} open position(s) · {{ run.open_order_count }} open order(s)
+</p>
+{% if run.findings %}
+<div class="card" style="padding:0">
+<table>
+  <tr><th>Kind</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Status</th></tr>
+  {% for f in run.findings %}
+  <tr>
+    <td class="mono">{{ f.kind }}</td>
+    <td>{{ f.symbol }}</td>
+    <td>{{ f.side }}</td>
+    <td class="mono">{{ f.qty }}</td>
+    <td>{{ f.status or "open" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="card"><p class="muted" style="margin:0">Nothing untracked found.</p></div>
+{% endif %}
+{% else %}
+<div class="card"><p class="muted" style="margin:0">No reconciliation has been run yet.</p></div>
+{% endif %}
+
+<form method="post" action="/broker/reconcile" style="margin-top:20px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit" class="secondary">Reconcile now</button>
+</form>
+
+{% endif %}
+{% endblock %}

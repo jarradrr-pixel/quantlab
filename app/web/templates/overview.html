@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Overview</h1>
+<p class="lede">Signed in as {{ operator.display_name }}.</p>
+
+{% if kill_switch.value %}
+<div class="flash">
+  Kill switch engaged since {{ kill_switch.updated_at|timestamp }} by {{ kill_switch.updated_by }}.
+  No strategy can enter paper trading while this is set.
+  {% if kill_switch.reason %}<br><span class="muted">{{ kill_switch.reason }}</span>{% endif %}
+</div>
+{% endif %}
+
+<div class="grid">
+  <div class="card stat"><div class="k">Projects</div><div class="n">{{ projects|length }}</div></div>
+  <div class="card stat"><div class="k">Audit entries</div><div class="n">{{ audit_count }}</div></div>
+  <div class="card stat"><div class="k">Trading mode</div><div class="n">{{ settings_obj.trading_mode.value }}</div></div>
+  <div class="card stat"><div class="k">Halted</div><div class="n">{{ "yes" if kill_switch.value else "no" }}</div></div>
+</div>
+
+<h2>Projects</h2>
+{% if projects %}
+<div class="card" style="padding:0">
+<table>
+  <tr><th>Name</th><th>State</th><th>Created</th></tr>
+  {% for p in projects %}
+  <tr>
+    <td><a href="/projects/{{ p.id }}">{{ p.name }}</a>
+        <div class="muted" style="font-size:13px">{{ p.research_objective|truncate(90) }}</div></td>
+    <td><span class="tag {% if p.state == 'PAUSED' %}halt{% elif p.state == 'REJECTED' %}stop{% elif p.state == 'PAPER_TRADING' %}live{% endif %}">{{ p.state }}</span></td>
+    <td class="mono">{{ p.created_at|timestamp }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="card"><p class="muted" style="margin:0">No projects yet. Start one below — it opens in RESEARCHING.</p></div>
+{% endif %}
+
+<h2>Start a project</h2>
+<form method="post" action="/projects" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="name">Name</label>
+  <input id="name" type="text" name="name" required maxlength="200">
+  <label for="research_objective">Research objective</label>
+  <textarea id="research_objective" name="research_objective" rows="3" required></textarea>
+  <p style="margin:18px 0 0"><button type="submit">Create project</button></p>
+</form>
+{% endblock %}

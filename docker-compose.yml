@@ -1,0 +1,38 @@
+# Local development stack. No brokerage credentials are defined here.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: quantlab
+      POSTGRES_PASSWORD: quantlab
+      POSTGRES_DB: quantlab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantlab"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published to the host by default; the app reaches it over the
+    # compose network. Uncomment only if you need a local psql client.
+    # ports: ["5432:5432"]
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      QUANTLAB_DATABASE_URL: postgresql+psycopg://quantlab:quantlab@db:5432/quantlab
+    ports:
+      - "127.0.0.1:8000:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+
+volumes:
+  pgdata:

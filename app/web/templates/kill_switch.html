@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Kill switch</h1>
+<p class="lede">Halts entry into paper trading. The system boots engaged and fails closed.</p>
+
+<div class="card">
+  <p style="margin-top:0">
+    <span class="tag {{ 'stop' if kill_switch.value else 'live' }}">
+      {{ "ENGAGED — HALTED" if kill_switch.value else "RELEASED" }}
+    </span>
+  </p>
+  <p class="mono" style="font-size:13px">
+    Last change {{ kill_switch.updated_at|timestamp }} by {{ kill_switch.updated_by }}
+  </p>
+  {% if kill_switch.reason %}<p class="muted">{{ kill_switch.reason }}</p>{% endif %}
+
+  <form method="post" action="/kill-switch" style="margin-top:20px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="engaged" value="{{ 'false' if kill_switch.value else 'true' }}">
+    <label for="reason">Reason (required, recorded in the audit log)</label>
+    <input id="reason" type="text" name="reason" required maxlength="500">
+    <p style="margin:18px 0 0">
+      <button type="submit" class="{{ '' if kill_switch.value else 'danger' }}">
+        {{ "Release kill switch" if kill_switch.value else "Engage kill switch" }}
+      </button>
+    </p>
+  </form>
+</div>
+{% endblock %}

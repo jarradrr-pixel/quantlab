@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ project.name }}</h1>
+<p class="lede">{{ project.research_objective }}</p>
+
+<div class="rail">
+  {% set ns = namespace(passed=false) %}
+  {% for step in pipeline %}
+    {% if step == current_state %}{% set ns.passed = true %}{% endif %}
+    <span class="step {% if step == current_state %}current{% elif not ns.passed %}done{% endif %}">{{ step.value }}</span>
+  {% endfor %}
+</div>
+<p class="muted mono" style="font-size:12px">
+  Current: {{ current_state.value }}{% if project.resume_state %} · resumes to {{ project.resume_state }}{% endif %}
+</p>
+
+<h2>Move state</h2>
+<div class="card">
+{% if available_targets %}
+<form method="post" action="/projects/{{ project.id }}/transition">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="target">Target state</label>
+  <select id="target" name="target">
+    {% for t in available_targets %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+  </select>
+  <label for="reason">Reason (recorded in the audit log)</label>
+  <input id="reason" type="text" name="reason" required maxlength="500">
+  <p style="margin:18px 0 0"><button type="submit">Move state</button></p>
+</form>
+<p class="muted" style="font-size:13px;margin-bottom:0">
+  Only transitions in the machine's table appear here. Entering PAPER_TRADING additionally
+  requires a recorded human approval and a released kill switch.
+</p>
+{% else %}
+<p class="muted" style="margin:0">{{ current_state.value }} is terminal. No further transitions are possible.</p>
+{% endif %}
+</div>
+
+<h2>State history</h2>
+<div class="card" style="padding:0">
+<table>
+  <tr><th>When</th><th>From</th><th>To</th><th>Actor</th><th>Reason</th></tr>
+  {% for t in transitions %}
+  <tr><td class="mono">{{ t.created_at|timestamp }}</td><td class="mono">{{ t.from_state }}</td>
+      <td class="mono">{{ t.to_state }}</td><td>{{ t.actor }}</td><td>{{ t.reason }}</td></tr>
+  {% else %}
+  <tr><td colspan="5" class="muted">No transitions recorded yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}
