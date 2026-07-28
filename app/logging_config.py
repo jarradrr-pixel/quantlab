@@ -41,6 +41,7 @@ _SENSITIVE_KEYS: Final[frozenset[str]] = frozenset(
         "private_key",
         "alpaca_api_key",
         "alpaca_api_secret",
+        "anthropic_api_key",
     }
 )
 

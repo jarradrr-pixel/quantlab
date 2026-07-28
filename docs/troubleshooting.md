@@ -67,3 +67,16 @@ be called some other way — nothing populates the cache automatically.
 separate actions from the plain state transition — moving the FSM forward
 does not itself run the backtest or risk engine. Use the "Run backtest" /
 "Run risk review" buttons on the project page.
+
+**`Research agent is not configured (no Anthropic API key)` (409)**
+`QUANTLAB_ANTHROPIC_API_KEY` is unset. There is no mock substitute for a paid
+LLM call — set the key in `.env` and restart to enable
+`POST /projects/{id}/research`.
+
+**Research request returns 502 with a message about Claude declining**
+The model's own safety classifier refused the question (`stop_reason ==
+"refusal"`). This is surfaced as a failed research run, audited as
+`research_failed` with the refusal message — rephrase the question or check
+that it doesn't ask for something outside the tool's research scope
+(investment advice, live trading, and similar are refused by design
+elsewhere in this system too).

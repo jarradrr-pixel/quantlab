@@ -25,6 +25,7 @@ from app.db.models import (
     Backtest,
     Order,
     Project,
+    ResearchFinding,
     RiskAssessment,
     Strategy,
     SystemFlag,
@@ -110,6 +111,7 @@ def project_detail(
     db: DbDep,
     operator: OperatorDep,
     session: SessionDep,
+    settings: SettingsDep,
 ) -> Response:
     project = db.get(Project, project_id)
     if project is None:
@@ -150,6 +152,13 @@ def project_detail(
         )
     )
     approval_kinds = list(db.scalars(select(ApprovalKind)))
+    findings = list(
+        db.scalars(
+            select(ResearchFinding)
+            .where(ResearchFinding.project_id == project_id)
+            .order_by(ResearchFinding.created_at.desc())
+        )
+    )
 
     return templates.TemplateResponse(
         request,
@@ -168,6 +177,8 @@ def project_detail(
             "approvals": approvals,
             "orders": orders,
             "approval_kinds": approval_kinds,
+            "findings": findings,
+            "research_agent_configured": settings.anthropic_api_key is not None,
             "csrf_token": _csrf(session),
         },
     )

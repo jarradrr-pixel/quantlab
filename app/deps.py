@@ -7,6 +7,8 @@ from typing import Annotated
 from fastapi import Depends, Form, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.agents.base import ResearchAgent
+from app.agents.claude import ClaudeResearchAgent
 from app.brokers.alpaca import AlpacaPaperBroker
 from app.brokers.base import BrokerAdapter
 from app.brokers.mock import MockBroker
@@ -123,3 +125,23 @@ def get_market_data_service(
 
 
 MarketDataDep = Annotated[MarketDataService, Depends(get_market_data_service)]
+
+
+def get_research_agent(request: Request, settings: SettingsDep) -> ResearchAgent | None:
+    """Return the research agent, or None if no API key is configured.
+
+    Unlike the broker (which always has a safe ``mock`` backend), there is no
+    coherent "simulate a paid third-party LLM for free" substitute -- absence
+    of a key means the feature is unavailable, and routes must treat ``None``
+    as a 409, not silently degrade.
+    """
+    if settings.anthropic_api_key is None:
+        return None
+    cached = getattr(request.app.state, "research_agent", None)
+    if cached is None:
+        cached = ClaudeResearchAgent(api_key=settings.anthropic_api_key.get_secret_value())
+        request.app.state.research_agent = cached
+    return cached
+
+
+ResearchAgentDep = Annotated[ResearchAgent | None, Depends(get_research_agent)]

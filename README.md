@@ -7,14 +7,18 @@ education, research, backtesting and paper trading.
 > path. `QUANTLAB_TRADING_MODE` accepts only `paper`; any other value is a
 > start-up failure. Nothing here is investment advice.
 
-**Status: Phases 1–3 of 6 complete.** The foundation (config, logging, DB,
+**Status: Phases 1–4 of 6 complete.** The foundation (config, logging, DB,
 orchestrator state machine, authentication, console), Phase 2 (market data,
 an MA strategy engine, a backtest/acceptance engine, a risk engine, a mock
-broker, and the approval workflow) and Phase 3 (an Alpaca paper broker
-adapter alongside the mock one) are built and tested. `CODE_GENERATION` and
-`CODE_VALIDATION` remain label-only transitions — sandboxed codegen is
-Phase 5. `PERFORMANCE_REVIEW` remains label-only too — that and strategy
-versioning are Phase 6. See [Roadmap](#roadmap).
+broker, and the approval workflow), Phase 3 (an Alpaca paper broker adapter
+alongside the mock one) and Phase 4 (a Claude-backed research agent with
+citation tracking and a per-project knowledge base) are built and tested.
+Phase 4 gives real content to `RESEARCHING` and review access during
+`KNOWLEDGE_REVIEW` only — `KNOWLEDGE_TESTING`, `HYPOTHESIS_DEVELOPMENT`,
+`CODE_GENERATION` and `CODE_VALIDATION` remain label-only transitions;
+a knowledge test, hypothesis generator and sandboxed codegen are Phase 5.
+`PERFORMANCE_REVIEW` remains label-only too — that and strategy versioning
+are Phase 6. See [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -59,7 +63,7 @@ Compose runs `alembic upgrade head` before starting the app and binds only to
 ### Running the checks
 
 ```bash
-pytest                # 135 tests
+pytest                # 157 tests
 ruff check .          # lint
 mypy app              # strict type checking
 ```
@@ -98,6 +102,7 @@ LLM agents  ──proposals──▶  Orchestrator (FSM)  ──▶  Backtest �
 | Risk engine | Pure Python (`app/core/risk.py`). No approved decision, no order. |
 | Acceptance engine | Deterministic verdict (`app/core/backtest.py`) a model may explain but never override. |
 | Broker adapter | Mock by default (`app/brokers/mock.py`) or Alpaca paper (`app/brokers/alpaca.py`), selected by `QUANTLAB_BROKER_BACKEND`. Order submission always passes through the risk engine first. |
+| Research agent | Claude-backed (`app/agents/claude.py`), returns a Pydantic `ResearchProposal` only — no DB session, no credentials beyond its own API key. Every claim requires at least one citation (Pydantic-enforced); findings persist as `pending` until an operator accepts or rejects them. |
 | Audit log | Append-only, SHA-256 hash-chained, secrets redacted before storage. |
 | Human approval | Only rows written by an authenticated `Operator` count — recorded via `/projects/{id}/approvals`. |
 | Kill switch | Boots engaged. Absent flag is read as engaged. |
@@ -144,11 +149,14 @@ Entering `PAPER_TRADING` needs all of: a legal edge, a released kill switch,
 and an `approved` row in `approvals` written by an authenticated operator.
 
 `STRATEGY_SPECIFICATION`, `BACKTESTING`, `RISK_REVIEW` and order submission
-inside `PAPER_TRADING` now have real engines behind them (`app/core/backtest.py`,
+inside `PAPER_TRADING` have real engines behind them (`app/core/backtest.py`,
 `app/core/risk.py`, `app/brokers/`) rather than being a bare label move.
-`CODE_GENERATION`/`CODE_VALIDATION` (Phase 5) and `PERFORMANCE_REVIEW`
-(Phase 6) are still label-only — moving through them records a transition
-but runs no engine yet.
+`RESEARCHING` and `KNOWLEDGE_REVIEW` now have a real research agent behind
+them too (`app/agents/claude.py`) — running a question and reviewing its
+findings via `/projects/{id}/research` and `/projects/{id}/findings/{id}/review`.
+`KNOWLEDGE_TESTING`/`HYPOTHESIS_DEVELOPMENT`, `CODE_GENERATION`/
+`CODE_VALIDATION` (Phase 5) and `PERFORMANCE_REVIEW` (Phase 6) are still
+label-only — moving through them records a transition but runs no engine yet.
 
 ## Environment variables
 
@@ -170,6 +178,7 @@ a limit name fails loudly instead of silently reverting to a default.
 | `QUANTLAB_MAX_ORDERS_PER_DAY` | `2` | |
 | `QUANTLAB_BROKER_BACKEND` | `mock` | `mock` or `alpaca`. `alpaca` requires both Alpaca credentials set. |
 | `QUANTLAB_ALPACA_PAPER_BASE_URL` | Alpaca's paper endpoint | Start-up fails if it's anything else. |
+| `QUANTLAB_ANTHROPIC_API_KEY` | unset | Unset disables the research agent (`/projects/{id}/research` returns 409) — there is no mock substitute for a paid LLM call. |
 
 Credentials belong in a local `.env` file only. Never paste them into a chat
 window, a commit, or an issue.
@@ -194,8 +203,8 @@ the grant makes it *hard*. See [docs/security.md](docs/security.md).
 | 1 | Foundation: config, logging, DB, FSM, auth, console, tests | **complete** |
 | 2 | Market data, MA strategy, backtest engine, risk engine, mock broker, approvals | **complete** |
 | 3 | Alpaca paper adapter, account verification, reconciliation | **complete** |
-| 4 | Research agent, citation tracking, knowledge base | next |
-| 5 | Knowledge test, hypothesis generator, sandboxed codegen | |
+| 4 | Research agent, citation tracking, knowledge base | **complete** |
+| 5 | Knowledge test, hypothesis generator, sandboxed codegen | next |
 | 6 | Performance review, experiment tracking, strategy versioning | |
 
 The two decisions the README previously flagged before Phase 2 are settled:

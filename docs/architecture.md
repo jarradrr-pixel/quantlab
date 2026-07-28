@@ -16,10 +16,12 @@ produce structured proposals; deterministic code decides.
 
 An agent's output reaching the broker requires passing through the schema
 validator, the acceptance engine, a human approval, the risk engine and the
-kill-switch check. There is no path around any of them. (Agents themselves —
-the LLM side of this table — are Phase 4+; today every one of these steps is
-triggered by an authenticated operator through the console, which is a
-stricter starting point than the eventual agent-driven pipeline.)
+kill-switch check. There is no path around any of them. Order submission,
+strategy specification, backtesting and risk review are still triggered only
+by an authenticated operator through the console — Phase 4 is the first
+agent in the system, and it is scoped narrowly to research: it can propose
+findings, never place an order, specify a strategy, or move a project's
+state.
 
 ### Backtest and acceptance engine (Phase 2)
 
@@ -85,6 +87,52 @@ also what `/broker/reconcile` (Phase 3) diffs broker-reported positions/open
 orders against to compute `untracked_position_count`/`untracked_order_count`,
 closing the gap Phase 3 originally documented ("no ledger to diff against").
 
+### Research agent (Phase 4)
+
+`app.agents.claude.ClaudeResearchAgent` is the only module in the codebase
+that calls an LLM. It has zero imports of `app.db` or SQLAlchemy, holds no
+session, and its `research(question)` method returns a `ResearchProposal` —
+a plain Pydantic object, never a database row. The route layer
+(`app/api/routes_research.py`, ordinary reviewed Python) is what turns a
+proposal into `ResearchFinding`/`Citation` rows.
+
+**The citation rule is structural, not conventional.** `ClaimProposal`'s own
+`field_validator` refuses to construct a claim with an empty `citations`
+list — a bug in the parsing code that builds a proposal cannot smuggle an
+uncited assertion through, because the object literally cannot exist without
+at least one citation. Citations themselves come from Claude's own
+`web_search_20260209` server tool: `TextBlock.citations` is populated by the
+API itself when a text segment is grounded in a search result, rather than
+asking the model to self-report sources in a separate, unverified structure.
+Text segments with no citations are dropped, not persisted as claims — the
+count of dropped segments travels with the proposal
+(`discarded_uncited_segment_count`) so the route can audit that they existed
+instead of the discard being silent.
+
+**Every finding starts `status="pending"`.** Nothing downstream — no other
+route, no future automation — may treat a finding as trustworthy until a
+human operator explicitly accepts or rejects it via
+`/projects/{id}/findings/{id}/review`. This bounds the worst case of a
+prompt-injection payload on a fetched web page: at most a misleading
+*pending* finding an operator must knowingly accept, never an automatic
+action, since the agent module holds no path to the database or the broker
+regardless of what a poisoned page tells it to do.
+
+**Two response states need explicit handling before the response can be
+trusted.** `stop_reason == "refusal"` (the API's own safety classifier
+declined) is checked before `response.content` is touched at all, since a
+refusal's content may be empty. `stop_reason == "pause_turn"` (the
+server-side web-search tool hit its internal iteration cap) is resumed by
+resending the conversation with the assistant's partial turn appended, up to
+three times, per the documented resume pattern — not treated as a failure.
+
+**No mock backend.** Unlike the broker (`MockBroker`) or market data
+(cached bars), there is no coherent "simulate a paid third-party LLM for
+free" substitute. `app.deps.get_research_agent` returns `None` when
+`QUANTLAB_ANTHROPIC_API_KEY` is unset, and `POST /projects/{id}/research`
+returns 409 in that case — absence-means-unavailable is the honest default,
+not a gap to fill later.
+
 ## Layers
 
 ```
@@ -102,6 +150,7 @@ app/
 │   └── risk.py          Strategy- and order-level risk checks.
 ├── brokers/           BrokerAdapter + AlpacaPaperBroker + MockBroker.
 ├── marketdata/        MarketDataProvider + YFinanceProvider + the bar cache.
+├── agents/            ResearchAgent + ClaudeResearchAgent. No DB import.
 ├── api/               HTTP routes. Thin; no domain logic.
 └── web/               Jinja2 console.
 ```

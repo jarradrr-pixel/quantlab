@@ -3,7 +3,7 @@
 Phase 1: operators, projects, the state history, human approvals and the
 audit chain. Phase 3: broker account snapshots and reconciliation runs.
 Phase 2: market data cache, strategies, backtests, risk assessments and the
-internal order ledger.
+internal order ledger. Phase 4: research findings and their citations.
 """
 
 from __future__ import annotations
@@ -422,3 +422,70 @@ class MockFill(Base):
     filled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, nullable=False
     )
+
+
+class ResearchFinding(Base):
+    """One claim proposed by a research agent, scoped to a project.
+
+    Written by the route layer only, never by agent code directly -- the
+    agent returns a ``ResearchProposal`` (see ``app.agents.base``), and this
+    row is what the route creates from it. ``status`` starts ``pending``:
+    nothing downstream may treat a finding as trustworthy until a human
+    operator reviews it via the accept/reject route.
+    """
+
+    __tablename__ = "research_findings"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected')", name="status_is_valid"
+        ),
+        Index("ix_research_findings_project_status", "project_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    claim: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    """E.g. ``"agent:claude-opus-5"`` -- never an operator; only a review sets
+    ``reviewed_by``."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+    citations: Mapped[list[Citation]] = relationship(
+        back_populates="finding", order_by="Citation.created_at"
+    )
+
+
+class Citation(Base):
+    """One source backing a ``ResearchFinding``'s claim.
+
+    A finding is never created with zero citations -- ``ClaimProposal``'s
+    own validator refuses to construct one, so the route layer never has an
+    uncited claim to persist in the first place.
+    """
+
+    __tablename__ = "citations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    finding_id: Mapped[str] = mapped_column(
+        ForeignKey("research_findings.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    quoted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    finding: Mapped[ResearchFinding] = relationship(back_populates="citations")

@@ -13,7 +13,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
-from app.api import routes_auth, routes_broker, routes_dashboard, routes_trading
+from app.api import (
+    routes_auth,
+    routes_broker,
+    routes_dashboard,
+    routes_research,
+    routes_trading,
+)
 from app.brokers.alpaca import AlpacaPaperBroker
 from app.config import Settings, get_settings
 from app.core.audit import AuditCategory, AuditLog
@@ -157,6 +163,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_dashboard.router)
     app.include_router(routes_broker.router)
     app.include_router(routes_trading.router)
+    app.include_router(routes_research.router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(

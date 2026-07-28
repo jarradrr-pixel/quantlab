@@ -111,6 +111,11 @@ class Settings(BaseSettings):
     credential presence -- a typo'd Alpaca key should fail start-up, not
     silently degrade to mock simulation."""
 
+    # --- Research agent (Phase 4) -----------------------------------------
+    anthropic_api_key: SecretStr | None = None
+    """Unset means the research agent is unavailable -- there is no safe
+    mock substitute for a paid LLM call, unlike the broker's mock backend."""
+
     @field_validator("trading_mode")
     @classmethod
     def _reject_live_trading(cls, value: TradingMode) -> TradingMode:

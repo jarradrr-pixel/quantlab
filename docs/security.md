@@ -16,10 +16,11 @@ Account and order identifiers are masked with `mask_identifier`, which keeps
 the last four characters so an operator can correlate against the broker UI
 without the full value appearing in a log.
 
-`QUANTLAB_ALPACA_API_KEY`/`QUANTLAB_ALPACA_API_SECRET` join the same
-sensitive-key set as every other credential (`_SENSITIVE_KEYS` in
-`app/logging_config.py`), so they're redacted from logs and from any audit
-payload that happens to include them. This does **not** extend to
+`QUANTLAB_ALPACA_API_KEY`/`QUANTLAB_ALPACA_API_SECRET` and
+`QUANTLAB_ANTHROPIC_API_KEY` join the same sensitive-key set as every other
+credential (`_SENSITIVE_KEYS` in `app/logging_config.py`), so they're
+redacted from logs and from any audit payload that happens to include them.
+This does **not** extend to
 `BrokerAccountSnapshot.raw_response` or `BrokerReconciliationRun.findings` --
 those are plain database columns holding Alpaca's account/position/order
 responses as-is, not audit payloads, and are never passed through

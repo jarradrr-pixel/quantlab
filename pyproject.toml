@@ -21,13 +21,14 @@ dependencies = [
   "python-multipart==0.0.20",
   "httpx==0.28.1",
   "yfinance==0.2.51",
+  "anthropic==0.120.2",
 ]
 
 [tool.setuptools]
 # Explicit, because flat-layout auto-discovery sees `app` and `alembic` as two
 # top-level packages and refuses to guess. Migrations ship via the Dockerfile
 # COPY, not as an installed package.
-packages = ["app", "app.api", "app.brokers", "app.core", "app.db", "app.marketdata", "app.web"]
+packages = ["app", "app.agents", "app.api", "app.brokers", "app.core", "app.db", "app.marketdata", "app.web"]
 
 [tool.setuptools.package-data]
 "app.web" = ["templates/*.html", "static/*"]

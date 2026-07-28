@@ -36,6 +36,59 @@
 {% endif %}
 </div>
 
+<h2>Knowledge base</h2>
+<div class="card">
+{% if not research_agent_configured %}
+<p class="muted" style="margin-top:0">Research agent not configured — set QUANTLAB_ANTHROPIC_API_KEY to enable.</p>
+{% endif %}
+<table>
+  <tr><th>When</th><th>Question</th><th>Claim</th><th>Status</th><th>Citations</th><th>Review</th></tr>
+  {% for f in findings %}
+  <tr>
+    <td class="mono">{{ f.created_at|timestamp }}</td>
+    <td>{{ f.question }}</td>
+    <td>{{ f.claim }}</td>
+    <td><span class="tag {{ 'live' if f.status == 'accepted' else ('stop' if f.status == 'rejected' else '') }}">{{ f.status }}</span></td>
+    <td>
+      <ul style="margin:0;padding-left:16px">
+      {% for c in f.citations %}
+        <li><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title or c.url }}</a></li>
+      {% endfor %}
+      </ul>
+    </td>
+    <td>
+    {% if f.status == "pending" %}
+      <form method="post" action="/projects/{{ project.id }}/findings/{{ f.id }}/review" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="decision" value="accepted">
+        <input type="hidden" name="notes" value="">
+        <button type="submit">Accept</button>
+      </form>
+      <form method="post" action="/projects/{{ project.id }}/findings/{{ f.id }}/review" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="decision" value="rejected">
+        <input type="hidden" name="notes" value="">
+        <button type="submit">Reject</button>
+      </form>
+    {% else %}
+      <span class="muted" style="font-size:13px">{{ f.reviewed_by }}</span>
+    {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No research findings yet.</td></tr>
+  {% endfor %}
+</table>
+{% if current_state.value in ("RESEARCHING", "KNOWLEDGE_REVIEW") %}
+<form method="post" action="/projects/{{ project.id }}/research" style="margin-top:16px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="rs_question">Research question</label>
+  <textarea id="rs_question" name="question" required maxlength="2000" rows="3"></textarea>
+  <p style="margin:18px 0 0"><button type="submit" {{ "disabled" if not research_agent_configured }}>Run research</button></p>
+</form>
+{% endif %}
+</div>
+
 <h2>Strategy</h2>
 <div class="card">
 {% if strategy %}
