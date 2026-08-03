@@ -100,3 +100,8 @@ generation agents" section for the full design.
   Every other configured limit (position size, total exposure, order count,
   open positions, shorting, leverage) is checked; this one would need
   day-start equity tracking that doesn't exist yet.
+- `app.core.performance.compute_order_performance` realizes P&L only on
+  closed round-trip trades from a strategy version's own filled orders. It
+  does not mark-to-market a position still open, and a sell fill with no
+  matching open lot (e.g. an unmodeled short) is excluded from the result
+  rather than estimated.

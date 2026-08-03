@@ -17,6 +17,7 @@ from app.api import (
     routes_auth,
     routes_broker,
     routes_dashboard,
+    routes_performance,
     routes_pipeline,
     routes_research,
     routes_trading,
@@ -166,6 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routes_trading.router)
     app.include_router(routes_research.router)
     app.include_router(routes_pipeline.router)
+    app.include_router(routes_performance.router)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(

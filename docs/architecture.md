@@ -200,6 +200,49 @@ here would duplicate the trust gate that already exists further downstream
 (risk review, human approval, kill switch) without changing what it
 protects against.
 
+### Performance engine & experiment tracking (Phase 6)
+
+`app.core.performance` is pure Python, same shape as `app.core.risk`: no
+network, no database, no agent. `compute_order_performance(orders)` realizes
+profit and loss from a strategy version's own filled `Order` rows — never
+from the broker's account snapshot — by FIFO-matching each symbol's buy
+fills against later sell fills (oldest lot first). Each sell that closes at
+least part of an open lot is one "trade"; its realized P&L is
+`(sell_price - matched_buy_price) * matched_qty`, summed across every lot it
+consumes. `evaluate_performance(result)` then mirrors `risk.py`'s
+accumulator-verdict pattern (`reasons: list[str]`, `accepted = not reasons`)
+rather than `backtest.py`'s single-`reason` style, since multiple
+conditions can hold at once: accepted iff `trade_count > 0` **and**
+`realized_pnl > 0` — hardcoded, no new `Settings` field, the same
+proportionality as `backtest.py`'s hardcoded benchmark-beat rule.
+
+**Two things this engine deliberately does not model.** A sell fill with no
+matching open lot (e.g. a short — which `risk.assess_order` already
+disallows by default) is excluded from realized P&L rather than modeled;
+there is no short-position accounting here. And `max_drawdown` is a dollar
+figure, not a percentage — there is no fixed capital base in the order
+ledger to divide by, unlike `backtest.py`'s base-100-indexed equity curve
+which does have one.
+
+`POST /projects/{id}/performance-review` (`app/api/routes_performance.py`)
+mirrors `run_risk_review` exactly: pull the current strategy version's
+orders, run the engine, persist a `PerformanceReview` row, audit
+`AuditCategory.PERFORMANCE`. No FSM-state check in the route itself — same
+precedent as every other engine-run route in this codebase (`run_backtest`,
+`run_risk_review`, `run_research`, none of which 409 on the wrong state);
+only `submit_project_order` does, because unlike a review, it is
+money-adjacent and cannot rely on the UI alone to stay safe.
+
+**Experiment tracking and strategy versioning reuse existing foreign keys —
+no new join table.** `Backtest.strategy_id`, `Order.strategy_id` and
+`PerformanceReview.strategy_id` already scope those rows to one strategy
+version; `RiskAssessment` has no `strategy_id` of its own, only
+`backtest_id`, so its rows are reached by joining through
+`Backtest.strategy_id` instead.
+`GET /projects/{id}/experiments` groups all of it by strategy version,
+newest first, giving "strategy versioning" a real history view instead of
+`project.html`'s "latest version only" display, with no new model needed.
+
 ## Layers
 
 ```
@@ -215,7 +258,8 @@ app/
 │   ├── audit.py         Hash-chained append-only log.
 │   ├── backtest.py      SMA crossover simulation + acceptance rule.
 │   ├── risk.py          Strategy- and order-level risk checks.
-│   └── codegen.py       Deterministic StrategySpecProposal validation.
+│   ├── codegen.py       Deterministic StrategySpecProposal validation.
+│   └── performance.py   FIFO P&L realization + acceptance verdict.
 ├── brokers/           BrokerAdapter + AlpacaPaperBroker + MockBroker.
 ├── marketdata/        MarketDataProvider + YFinanceProvider + the bar cache.
 ├── agents/            ResearchAgent, KnowledgeTestAgent, HypothesisAgent,

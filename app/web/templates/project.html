@@ -144,6 +144,11 @@
   fast {{ strategy.fast_window }} / slow {{ strategy.slow_window }} ·
   min out-of-sample trades {{ strategy.minimum_out_of_sample_trades }}
 </p>
+{% if strategy_version_count > 1 %}
+<p class="muted" style="font-size:13px">
+  <a href="/projects/{{ project.id }}/experiments">View all {{ strategy_version_count }} strategy versions &amp; their experiments →</a>
+</p>
+{% endif %}
 {% else %}
 <p class="muted" style="margin-top:0">No strategy specified yet.</p>
 {% endif %}
@@ -327,6 +332,31 @@
 </table>
 </div>
 {% endif %}
+
+<h2>Performance review</h2>
+<div class="card">
+{% if latest_performance_review %}
+{% set p = latest_performance_review %}
+<p class="mono" style="margin-top:0">
+  <span class="tag {{ 'live' if p.accepted else 'stop' }}">{{ "ACCEPTED" if p.accepted else "REJECTED" }}</span>
+  {{ p.trade_count }} trade(s) · realized P&amp;L {{ p.realized_pnl }} ·
+  win rate {{ p.win_rate_pct }}% · max drawdown {{ p.max_drawdown }}
+</p>
+{% if p.reasons %}<ul class="muted" style="margin:6px 0">{% for reason in p.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}
+{% else %}
+<p class="muted" style="margin-top:0">No performance review run yet.</p>
+{% endif %}
+{% if current_state.value == "PERFORMANCE_REVIEW" %}
+<form method="post" action="/projects/{{ project.id }}/performance-review">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="muted" style="font-size:13px">
+    Realizes profit and loss from this strategy version's own filled orders — no
+    mark-to-market of positions still open.
+  </p>
+  <p style="margin:18px 0 0"><button type="submit" {{ "disabled" if not strategy }}>Run performance review</button></p>
+</form>
+{% endif %}
+</div>
 
 <h2>State history</h2>
 <div class="card" style="padding:0">

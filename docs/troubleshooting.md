@@ -106,3 +106,23 @@ cap). The `GeneratedStrategyCode` row is still persisted with
 `validated=False` and its `validation_reasons`, but no new `Strategy`
 version is created — the previous version remains current. Generate code
 again; a fresh agent call may propose different windows.
+
+**`Specify a strategy first` (400) on `/performance-review`**
+`POST /projects/{id}/performance-review` scopes its review to the project's
+latest `Strategy` version — there is nothing to review until one exists.
+Specify a strategy first.
+
+**Performance review shows 0 trades or 0 realized P&L**
+`app.core.performance.compute_order_performance` only counts *closed*
+round-trip trades (a sell fill matched against an earlier buy fill for the
+same symbol) from the current strategy version's own `Order` rows. A buy
+with no matching sell yet contributes nothing to `trade_count` or
+`realized_pnl` — it isn't mark-to-marked. Submit a closing order, or check
+`Order.strategy_id` actually points at the strategy version you expect (an
+order submitted before a strategy existed has a `null` `strategy_id` and is
+excluded from every version's review).
+
+**`/projects/{id}/experiments` shows "No strategy has been specified for this project yet"**
+The page groups every `Backtest`/`RiskAssessment`/`Order`/`PerformanceReview`
+by `Strategy` version; with zero strategies specified there is nothing to
+group. Specify a strategy via `STRATEGY_SPECIFICATION` first.

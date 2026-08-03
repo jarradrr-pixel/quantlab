@@ -7,17 +7,17 @@ education, research, backtesting and paper trading.
 > path. `QUANTLAB_TRADING_MODE` accepts only `paper`; any other value is a
 > start-up failure. Nothing here is investment advice.
 
-**Status: Phases 1–5 of 6 complete.** The foundation (config, logging, DB,
+**Status: Phases 1–6 of 6 complete.** The foundation (config, logging, DB,
 orchestrator state machine, authentication, console), Phase 2 (market data,
 an MA strategy engine, a backtest/acceptance engine, a risk engine, a mock
 broker, and the approval workflow), Phase 3 (an Alpaca paper broker adapter
 alongside the mock one), Phase 4 (a Claude-backed research agent with
-citation tracking and a per-project knowledge base) and Phase 5 (a knowledge
+citation tracking and a per-project knowledge base), Phase 5 (a knowledge
 test, a hypothesis generator and DSL-based strategy code generation, all
-Claude-backed) are built and tested. Every pipeline stage through
-`CODE_VALIDATION` now has a real engine behind it — only `PERFORMANCE_REVIEW`
-remains label-only, along with strategy versioning; both are Phase 6. See
-[Roadmap](#roadmap).
+Claude-backed) and Phase 6 (a deterministic performance-review engine, plus
+experiment tracking and strategy-version history views) are built and
+tested. Every pipeline stage now has a real engine or agent behind it — no
+stage is label-only anymore. See [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -62,7 +62,7 @@ Compose runs `alembic upgrade head` before starting the app and binds only to
 ### Running the checks
 
 ```bash
-pytest                # 189 tests
+pytest                # 204 tests
 ruff check .          # lint
 mypy app              # strict type checking
 ```
@@ -104,6 +104,7 @@ LLM agents  ──proposals──▶  Orchestrator (FSM)  ──▶  Backtest �
 | Research agent | Claude-backed (`app/agents/claude.py`), returns a Pydantic `ResearchProposal` only — no DB session, no credentials beyond its own API key. Every claim requires at least one citation (Pydantic-enforced); findings persist as `pending` until an operator accepts or rejects them. |
 | Knowledge test / hypothesis agents | Claude-backed, closed-book (no web search) — reason only over a project's already-accepted findings. Every verdict/hypothesis must cite at least one accepted finding (Pydantic-enforced). |
 | Code generation | Claude proposes numeric SMA-window parameters only (`StrategySpecProposal`) — a parameterized DSL, not free-form code, so there is nothing to sandbox. `app/core/codegen.py` deterministically validates the proposal; a new `Strategy` version is created only when validation passes. |
+| Performance engine | Pure Python (`app/core/performance.py`). Realizes P&L by FIFO-matching a strategy version's own filled `Order` rows — no agent, no broker call, no mark-to-market of positions still open. |
 | Audit log | Append-only, SHA-256 hash-chained, secrets redacted before storage. |
 | Human approval | Only rows written by an authenticated `Operator` count — recorded via `/projects/{id}/approvals`. |
 | Kill switch | Boots engaged. Absent flag is read as engaged. |
@@ -156,14 +157,18 @@ inside `PAPER_TRADING` have real engines behind them (`app/core/backtest.py`,
 (`app/agents/claude.py`) — running a question and reviewing its findings via
 `/projects/{id}/research` and `/projects/{id}/findings/{id}/review`.
 `KNOWLEDGE_TESTING`, `HYPOTHESIS_DEVELOPMENT`, `CODE_GENERATION` and
-`CODE_VALIDATION` now have real engines too: a closed-book knowledge-test
+`CODE_VALIDATION` have real engines too: a closed-book knowledge-test
 agent, a hypothesis-synthesis agent, a strategy-code-generation agent, and a
 deterministic validator (`app/core/codegen.py`) that gates whether a new
 `Strategy` version gets created — see
 `/projects/{id}/knowledge-tests`, `/projects/{id}/hypotheses`,
 `/projects/{id}/generate-code` and `/projects/{id}/validate-code`.
-`PERFORMANCE_REVIEW` (Phase 6) is the only stage still label-only — moving
-through it records a transition but runs no engine yet.
+`PERFORMANCE_REVIEW` now has a real engine too (`app/core/performance.py`,
+via `POST /projects/{id}/performance-review`) that realizes P&L from a
+strategy version's own order fills. No stage in the pipeline is label-only
+anymore — its two rework edges (back to `HYPOTHESIS_DEVELOPMENT` to revise,
+or back to `PAPER_TRADING` to keep trading) needed no change to get a real
+engine behind them, since both were already wired in `app/core/states.py`.
 
 ## Environment variables
 
@@ -212,7 +217,7 @@ the grant makes it *hard*. See [docs/security.md](docs/security.md).
 | 3 | Alpaca paper adapter, account verification, reconciliation | **complete** |
 | 4 | Research agent, citation tracking, knowledge base | **complete** |
 | 5 | Knowledge test, hypothesis generator, strategy code generation | **complete** |
-| 6 | Performance review, experiment tracking, strategy versioning | next |
+| 6 | Performance review, experiment tracking, strategy versioning | **complete** |
 
 The two decisions the README previously flagged before Phase 2 are settled:
 
@@ -234,6 +239,11 @@ The two decisions the README previously flagged before Phase 2 are settled:
    agent to numeric SMA-window parameters only — the same demonstration of
    "an LLM proposes, deterministic code validates and gates" with no code
    execution risk at all, and no sandbox to build, maintain or ever get wrong.
+4. **Phase 6 experiment tracking: no new `Experiment` table.**
+   `Backtest.strategy_id`, `Order.strategy_id` and `RiskAssessment.backtest_id`
+   (→ `Backtest.strategy_id`) already let every artifact be grouped by
+   strategy version, so `/projects/{id}/experiments` is a read-only view over
+   existing foreign keys rather than a new join table nobody needed yet.
 
 ## Disclaimer
 

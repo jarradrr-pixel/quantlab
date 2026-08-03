@@ -27,6 +27,7 @@ from app.db.models import (
     Hypothesis,
     KnowledgeTest,
     Order,
+    PerformanceReview,
     Project,
     ResearchFinding,
     RiskAssessment,
@@ -177,6 +178,16 @@ def project_detail(
         .where(GeneratedStrategyCode.project_id == project_id)
         .order_by(GeneratedStrategyCode.created_at.desc())
     ).first()
+    latest_performance_review = db.scalars(
+        select(PerformanceReview)
+        .where(PerformanceReview.project_id == project_id)
+        .order_by(PerformanceReview.created_at.desc())
+    ).first()
+    strategy_version_count = db.scalar(
+        select(func.count())
+        .select_from(Strategy)
+        .where(Strategy.project_id == project_id)
+    ) or 0
 
     return templates.TemplateResponse(
         request,
@@ -199,6 +210,8 @@ def project_detail(
             "latest_knowledge_test": latest_knowledge_test,
             "latest_hypothesis": latest_hypothesis,
             "latest_generated_code": latest_generated_code,
+            "latest_performance_review": latest_performance_review,
+            "strategy_version_count": strategy_version_count,
             "research_agent_configured": settings.anthropic_api_key is not None,
             "csrf_token": _csrf(session),
         },

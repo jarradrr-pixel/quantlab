@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ project.name }}</h1>
+<p class="lede">Experiments — every strategy version's full history, newest first.
+  <a href="/projects/{{ project.id }}">Back to project</a>
+</p>
+
+{% for e in experiments %}
+{% set s = e.strategy %}
+<h2>v{{ s.version }} — {{ s.name }}</h2>
+<div class="card">
+<p class="mono" style="margin-top:0">
+  {{ s.symbol }} · {{ s.timeframe }} · fast {{ s.fast_window }} / slow {{ s.slow_window }} ·
+  min out-of-sample trades {{ s.minimum_out_of_sample_trades }} ·
+  <span class="muted">{{ s.created_by }}, {{ s.created_at|timestamp }}</span>
+</p>
+
+<h2 style="margin-top:20px">Backtests</h2>
+<table>
+  <tr><th>When</th><th>Verdict</th><th>Return</th><th>Benchmark</th><th>Drawdown</th><th>Trades</th></tr>
+  {% for b in e.backtests %}
+  <tr>
+    <td class="mono">{{ b.created_at|timestamp }}</td>
+    <td><span class="tag {{ 'live' if b.accepted else 'stop' }}">{{ "ACCEPTED" if b.accepted else "REJECTED" }}</span></td>
+    <td class="mono">{{ b.total_return_pct }}%</td>
+    <td class="mono">{{ b.benchmark_return_pct }}%</td>
+    <td class="mono">{{ b.max_drawdown_pct }}%</td>
+    <td class="mono">{{ b.trade_count }} ({{ b.out_of_sample_trade_count }} OOS)</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No backtests for this version.</td></tr>
+  {% endfor %}
+</table>
+
+<h2 style="margin-top:20px">Risk assessments</h2>
+<table>
+  <tr><th>When</th><th>Verdict</th><th>Reasons</th></tr>
+  {% for r in e.risk_assessments %}
+  <tr>
+    <td class="mono">{{ r.created_at|timestamp }}</td>
+    <td><span class="tag {{ 'live' if r.approved else 'stop' }}">{{ "APPROVED" if r.approved else "REFUSED" }}</span></td>
+    <td>{% if r.reasons %}<ul class="muted" style="margin:0;padding-left:16px">{% for reason in r.reasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" class="muted">No risk assessments for this version.</td></tr>
+  {% endfor %}
+</table>
+
+<h2 style="margin-top:20px">Orders</h2>
+<table>
+  <tr><th>When</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Status</th><th>Fill price</th></tr>
+  {% for o in e.orders %}
+  <tr>
+    <td class="mono">{{ o.created_at|timestamp }}</td>
+    <td>{{ o.symbol }}</td><td>{{ o.side }}</td>
+    <td class="mono">{{ o.qty }}</td>
+    <td><span class="tag live">{{ o.status }}</span></td>
+    <td class="mono">{{ o.filled_avg_price or "—" }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No orders for this version.</td></tr>
+  {% endfor %}
+</table>
+
+<h2 style="margin-top:20px">Performance reviews</h2>
+<table>
+  <tr><th>When</th><th>Verdict</th><th>Trades</th><th>Realized P&amp;L</th><th>Win rate</th><th>Max drawdown</th></tr>
+  {% for p in e.performance_reviews %}
+  <tr>
+    <td class="mono">{{ p.created_at|timestamp }}</td>
+    <td><span class="tag {{ 'live' if p.accepted else 'stop' }}">{{ "ACCEPTED" if p.accepted else "REJECTED" }}</span></td>
+    <td class="mono">{{ p.trade_count }}</td>
+    <td class="mono">{{ p.realized_pnl }}</td>
+    <td class="mono">{{ p.win_rate_pct }}%</td>
+    <td class="mono">{{ p.max_drawdown }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">No performance reviews for this version.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% else %}
+<div class="card">
+<p class="muted" style="margin:0">No strategy has been specified for this project yet.</p>
+</div>
+{% endfor %}
+{% endblock %}

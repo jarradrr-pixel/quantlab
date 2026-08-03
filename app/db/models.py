@@ -5,6 +5,7 @@ audit chain. Phase 3: broker account snapshots and reconciliation runs.
 Phase 2: market data cache, strategies, backtests, risk assessments and the
 internal order ledger. Phase 4: research findings and their citations.
 Phase 5: knowledge tests, hypotheses and agent-generated strategy code.
+Phase 6: performance reviews.
 """
 
 from __future__ import annotations
@@ -582,3 +583,39 @@ class GeneratedStrategyCode(Base):
     produced_strategy: Mapped[Strategy | None] = relationship(
         foreign_keys=[produced_strategy_id]
     )
+
+
+class PerformanceReview(Base):
+    """One deterministic performance-review run of a strategy version's own
+    ``Order`` fills. Realizes P&L from QuantLab's own ledger, not the
+    broker's account snapshot, so the review is reproducible from data
+    already persisted here. Engine-run record, like ``Backtest``/
+    ``RiskAssessment`` -- no separate accept/reject workflow.
+    """
+
+    __tablename__ = "performance_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    strategy_id: Mapped[str | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="RESTRICT"), nullable=True
+    )
+    trade_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    win_rate_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    max_drawdown: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    """A dollar figure, not a percentage -- there is no fixed capital base in
+    the order ledger to divide by."""
+
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reasons: Mapped[list[str]] = mapped_column(JSONType, nullable=False)
+    equity_curve: Mapped[list[dict[str, Any]]] = mapped_column(JSONType, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+    strategy: Mapped[Strategy | None] = relationship()
