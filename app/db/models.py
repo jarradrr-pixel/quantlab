@@ -4,6 +4,7 @@ Phase 1: operators, projects, the state history, human approvals and the
 audit chain. Phase 3: broker account snapshots and reconciliation runs.
 Phase 2: market data cache, strategies, backtests, risk assessments and the
 internal order ledger. Phase 4: research findings and their citations.
+Phase 5: knowledge tests, hypotheses and agent-generated strategy code.
 """
 
 from __future__ import annotations
@@ -489,3 +490,95 @@ class Citation(Base):
     )
 
     finding: Mapped[ResearchFinding] = relationship(back_populates="citations")
+
+
+class KnowledgeTest(Base):
+    """One closed-book verdict on whether a question is supported by a
+    project's accepted research findings. Engine-run record, like
+    ``Backtest``/``RiskAssessment`` -- no separate accept/reject workflow."""
+
+    __tablename__ = "knowledge_tests"
+    __table_args__ = (
+        CheckConstraint(
+            "verdict IN ('supported', 'not_supported', 'contradicted')",
+            name="verdict_is_valid",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    verdict: Mapped[str] = mapped_column(String(20), nullable=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    cited_finding_ids: Mapped[list[str]] = mapped_column(JSONType, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+
+
+class Hypothesis(Base):
+    """One agent-synthesized, testable trading hypothesis. Engine-run record,
+    like ``KnowledgeTest`` -- the trust gate that matters (approval + kill
+    switch before PAPER_TRADING) is unchanged and still downstream."""
+
+    __tablename__ = "hypotheses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    statement: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    cited_finding_ids: Mapped[list[str]] = mapped_column(JSONType, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+
+
+class GeneratedStrategyCode(Base):
+    """One agent-proposed refinement of a strategy's SMA windows.
+
+    No ``symbol``/``timeframe``/``strategy_type`` columns -- those are always
+    identical to ``base_strategy``'s, since ``StrategySpecProposal`` never
+    lets the agent choose them (see ``app.agents.base``); join to
+    ``base_strategy`` for display. ``validated`` is ``None`` until
+    ``/validate-code`` runs; ``produced_strategy_id`` is set only when
+    validation passes and a new ``Strategy`` version is created from this row.
+    """
+
+    __tablename__ = "generated_strategy_code"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    base_strategy_id: Mapped[str] = mapped_column(
+        ForeignKey("strategies.id", ondelete="RESTRICT"), nullable=False
+    )
+    fast_window: Mapped[int] = mapped_column(Integer, nullable=False)
+    slow_window: Mapped[int] = mapped_column(Integer, nullable=False)
+    minimum_out_of_sample_trades: Mapped[int] = mapped_column(Integer, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    validated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    validation_reasons: Mapped[list[str] | None] = mapped_column(JSONType, nullable=True)
+    produced_strategy_id: Mapped[str | None] = mapped_column(
+        ForeignKey("strategies.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+
+    project: Mapped[Project] = relationship()
+    base_strategy: Mapped[Strategy] = relationship(foreign_keys=[base_strategy_id])
+    produced_strategy: Mapped[Strategy | None] = relationship(
+        foreign_keys=[produced_strategy_id]
+    )

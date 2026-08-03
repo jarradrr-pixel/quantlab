@@ -80,3 +80,29 @@ The model's own safety classifier refused the question (`stop_reason ==
 that it doesn't ask for something outside the tool's research scope
 (investment advice, live trading, and similar are refused by design
 elsewhere in this system too).
+
+**`Accept at least one research finding first` (400) at `KNOWLEDGE_TESTING` or `HYPOTHESIS_DEVELOPMENT`**
+`POST /projects/{id}/knowledge-tests` and `POST /projects/{id}/hypotheses`
+both reason only over *accepted* `ResearchFinding` rows — pending or
+rejected findings don't count. Go back to the Knowledge base section and
+accept at least one finding via `/projects/{id}/findings/{id}/review` first.
+
+**`Develop a hypothesis first` (400) at `CODE_GENERATION`**
+`POST /projects/{id}/generate-code` needs both an existing `Strategy` (from
+`STRATEGY_SPECIFICATION`) and a `Hypothesis` row (from
+`POST /projects/{id}/hypotheses`) to build its prompt context. Run the
+hypothesis step before generating code.
+
+**`Generate code first` (400) at `CODE_VALIDATION`**
+`POST /projects/{id}/validate-code` validates the *latest*
+`GeneratedStrategyCode` row for the project; there is nothing to validate
+until `POST /projects/{id}/generate-code` has run at least once.
+
+**Code validation succeeds (303) but the page shows INVALID and no new strategy version**
+This is the deterministic gate working as designed, not a bug: the agent's
+proposed `fast_window`/`slow_window`/`minimum_out_of_sample_trades` failed
+`app.core.codegen.validate_strategy_spec` (e.g. a window over the 500-bar
+cap). The `GeneratedStrategyCode` row is still persisted with
+`validated=False` and its `validation_reasons`, but no new `Strategy`
+version is created — the previous version remains current. Generate code
+again; a fresh agent call may propose different windows.

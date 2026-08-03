@@ -17,8 +17,9 @@ if the parsing code that builds one has a bug.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationInfo, field_validator
 
 
 class CitationProposal(BaseModel):
@@ -54,3 +55,107 @@ class ResearchAgentError(Exception):
 class ResearchAgent(ABC):
     @abstractmethod
     def research(self, question: str) -> ResearchProposal: ...
+
+
+class AgentError(Exception):
+    """Raised when a Phase 5 pipeline agent cannot produce a proposal."""
+
+
+class AcceptedFinding(BaseModel):
+    """Plain data the route layer builds from accepted ``ResearchFinding``
+    rows -- agents never query the database themselves."""
+
+    id: str
+    claim: str
+    citation_urls: list[str]
+
+
+class KnowledgeTestSummary(BaseModel):
+    """Plain data the route layer builds from a project's past ``KnowledgeTest``
+    rows, for the hypothesis agent's context."""
+
+    question: str
+    verdict: str
+    reasoning: str
+
+
+class KnowledgeTestProposal(BaseModel):
+    verdict: Literal["supported", "not_supported", "contradicted"]
+    reasoning: str
+    cited_finding_ids: list[str]
+
+    @field_validator("cited_finding_ids")
+    @classmethod
+    def _at_least_one_citation(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("a knowledge test verdict must cite at least one finding")
+        return value
+
+
+class HypothesisProposal(BaseModel):
+    statement: str
+    rationale: str
+    cited_finding_ids: list[str]
+
+    @field_validator("cited_finding_ids")
+    @classmethod
+    def _at_least_one_citation(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("a hypothesis must cite at least one finding")
+        return value
+
+
+class StrategySpecProposal(BaseModel):
+    """Deliberately narrow: no ``strategy_type``/``symbol``/``timeframe`` field.
+    Those are inherited verbatim from the base strategy the route passes in
+    as fixed context -- the agent only refines the numeric windows, which
+    keeps this proposal structurally incapable of picking an unapproved
+    instrument no matter what the model outputs.
+    """
+
+    fast_window: int
+    slow_window: int
+    minimum_out_of_sample_trades: int
+    rationale: str
+
+    @field_validator("slow_window")
+    @classmethod
+    def _slow_beats_fast(cls, value: int, info: ValidationInfo) -> int:
+        fast_window = info.data.get("fast_window")
+        if fast_window is not None and fast_window <= 0:
+            raise ValueError("fast_window must be positive")
+        if value <= 0:
+            raise ValueError("slow_window must be positive")
+        if fast_window is not None and value <= fast_window:
+            raise ValueError("slow_window must be greater than fast_window")
+        return value
+
+
+class KnowledgeTestAgent(ABC):
+    @abstractmethod
+    def test(
+        self, question: str, findings: list[AcceptedFinding]
+    ) -> KnowledgeTestProposal: ...
+
+
+class HypothesisAgent(ABC):
+    @abstractmethod
+    def propose(
+        self,
+        objective: str,
+        findings: list[AcceptedFinding],
+        prior_tests: list[KnowledgeTestSummary],
+    ) -> HypothesisProposal: ...
+
+
+class StrategyCodeAgent(ABC):
+    @abstractmethod
+    def generate(
+        self,
+        hypothesis_statement: str,
+        *,
+        symbol: str,
+        timeframe: str,
+        current_fast_window: int,
+        current_slow_window: int,
+    ) -> StrategySpecProposal: ...

@@ -4,11 +4,20 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import anthropic
 from fastapi import Depends, Form, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.agents.base import ResearchAgent
+from app.agents.base import (
+    HypothesisAgent,
+    KnowledgeTestAgent,
+    ResearchAgent,
+    StrategyCodeAgent,
+)
 from app.agents.claude import ClaudeResearchAgent
+from app.agents.hypothesis import ClaudeHypothesisAgent
+from app.agents.knowledge_test import ClaudeKnowledgeTestAgent
+from app.agents.strategy_code import ClaudeStrategyCodeAgent
 from app.brokers.alpaca import AlpacaPaperBroker
 from app.brokers.base import BrokerAdapter
 from app.brokers.mock import MockBroker
@@ -127,7 +136,27 @@ def get_market_data_service(
 MarketDataDep = Annotated[MarketDataService, Depends(get_market_data_service)]
 
 
-def get_research_agent(request: Request, settings: SettingsDep) -> ResearchAgent | None:
+def _get_anthropic_client(
+    request: Request, settings: SettingsDep
+) -> anthropic.Anthropic | None:
+    """Return the shared Anthropic client, or None if no API key is
+    configured. Shared across every agent below so they don't each open their
+    own HTTP connection pool for the one credential they all use.
+    """
+    if settings.anthropic_api_key is None:
+        return None
+    cached = getattr(request.app.state, "anthropic_client", None)
+    if cached is None:
+        cached = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
+        request.app.state.anthropic_client = cached
+    return cached
+
+
+def get_research_agent(
+    request: Request,
+    settings: SettingsDep,
+    client: Annotated[anthropic.Anthropic | None, Depends(_get_anthropic_client)],
+) -> ResearchAgent | None:
     """Return the research agent, or None if no API key is configured.
 
     Unlike the broker (which always has a safe ``mock`` backend), there is no
@@ -135,13 +164,82 @@ def get_research_agent(request: Request, settings: SettingsDep) -> ResearchAgent
     of a key means the feature is unavailable, and routes must treat ``None``
     as a 409, not silently degrade.
     """
-    if settings.anthropic_api_key is None:
+    if client is None:
         return None
+    assert settings.anthropic_api_key is not None  # narrowed by client not being None
     cached = getattr(request.app.state, "research_agent", None)
     if cached is None:
-        cached = ClaudeResearchAgent(api_key=settings.anthropic_api_key.get_secret_value())
+        cached = ClaudeResearchAgent(
+            api_key=settings.anthropic_api_key.get_secret_value(), client=client
+        )
         request.app.state.research_agent = cached
     return cached
 
 
 ResearchAgentDep = Annotated[ResearchAgent | None, Depends(get_research_agent)]
+
+
+def get_knowledge_test_agent(
+    request: Request,
+    settings: SettingsDep,
+    client: Annotated[anthropic.Anthropic | None, Depends(_get_anthropic_client)],
+) -> KnowledgeTestAgent | None:
+    """Same "no mock substitute, None means unconfigured" pattern as
+    ``get_research_agent``."""
+    if client is None:
+        return None
+    assert settings.anthropic_api_key is not None  # narrowed by client not being None
+    cached = getattr(request.app.state, "knowledge_test_agent", None)
+    if cached is None:
+        cached = ClaudeKnowledgeTestAgent(
+            api_key=settings.anthropic_api_key.get_secret_value(), client=client
+        )
+        request.app.state.knowledge_test_agent = cached
+    return cached
+
+
+KnowledgeTestAgentDep = Annotated[
+    KnowledgeTestAgent | None, Depends(get_knowledge_test_agent)
+]
+
+
+def get_hypothesis_agent(
+    request: Request,
+    settings: SettingsDep,
+    client: Annotated[anthropic.Anthropic | None, Depends(_get_anthropic_client)],
+) -> HypothesisAgent | None:
+    if client is None:
+        return None
+    assert settings.anthropic_api_key is not None  # narrowed by client not being None
+    cached = getattr(request.app.state, "hypothesis_agent", None)
+    if cached is None:
+        cached = ClaudeHypothesisAgent(
+            api_key=settings.anthropic_api_key.get_secret_value(), client=client
+        )
+        request.app.state.hypothesis_agent = cached
+    return cached
+
+
+HypothesisAgentDep = Annotated[HypothesisAgent | None, Depends(get_hypothesis_agent)]
+
+
+def get_strategy_code_agent(
+    request: Request,
+    settings: SettingsDep,
+    client: Annotated[anthropic.Anthropic | None, Depends(_get_anthropic_client)],
+) -> StrategyCodeAgent | None:
+    if client is None:
+        return None
+    assert settings.anthropic_api_key is not None  # narrowed by client not being None
+    cached = getattr(request.app.state, "strategy_code_agent", None)
+    if cached is None:
+        cached = ClaudeStrategyCodeAgent(
+            api_key=settings.anthropic_api_key.get_secret_value(), client=client
+        )
+        request.app.state.strategy_code_agent = cached
+    return cached
+
+
+StrategyCodeAgentDep = Annotated[
+    StrategyCodeAgent | None, Depends(get_strategy_code_agent)
+]

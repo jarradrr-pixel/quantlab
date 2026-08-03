@@ -16,12 +16,13 @@ produce structured proposals; deterministic code decides.
 
 An agent's output reaching the broker requires passing through the schema
 validator, the acceptance engine, a human approval, the risk engine and the
-kill-switch check. There is no path around any of them. Order submission,
-strategy specification, backtesting and risk review are still triggered only
-by an authenticated operator through the console — Phase 4 is the first
-agent in the system, and it is scoped narrowly to research: it can propose
-findings, never place an order, specify a strategy, or move a project's
-state.
+kill-switch check. There is no path around any of them. Order submission and
+risk review are still triggered only by an authenticated operator through
+the console. Phase 4 added the first agent in the system, scoped narrowly to
+research; Phase 5 adds three more (knowledge test, hypothesis, strategy
+code), each still scoped to one proposal type with no path to the database,
+the broker, or the state machine. None of the four agents can place an
+order, move a project's state, or accept its own output as trustworthy.
 
 ### Backtest and acceptance engine (Phase 2)
 
@@ -133,6 +134,72 @@ free" substitute. `app.deps.get_research_agent` returns `None` when
 returns 409 in that case — absence-means-unavailable is the honest default,
 not a gap to fill later.
 
+### Knowledge test, hypothesis and code generation agents (Phase 5)
+
+Three more single-purpose agents, each following the same shape as the
+research agent: a plain Pydantic proposal in, no database session, no
+credentials beyond the shared Anthropic API key. Unlike the research agent,
+none of the three use the `web_search_20260209` tool — they are closed-book,
+reasoning only over context the route layer assembles from already-persisted
+rows, never fetching anything new themselves:
+
+- `KnowledgeTestAgent.test(question, findings)` → `KnowledgeTestProposal`
+  (`verdict`, `reasoning`, `cited_finding_ids`) — a closed-book check of
+  whether a question is supported by a project's *accepted*
+  `ResearchFinding` rows (`app/api/routes_pipeline.py` only passes findings
+  with `status="accepted"`, never pending or rejected ones).
+- `HypothesisAgent.propose(objective, findings, prior_tests)` →
+  `HypothesisProposal` (`statement`, `rationale`, `cited_finding_ids`) —
+  synthesizes the project's research objective, accepted findings and prior
+  knowledge-test verdicts into one testable hypothesis.
+- `StrategyCodeAgent.generate(hypothesis_statement, symbol=, timeframe=,
+  current_fast_window=, current_slow_window=)` → `StrategySpecProposal`
+  (`fast_window`, `slow_window`, `minimum_out_of_sample_trades`,
+  `rationale`) — proposes refined SMA-crossover windows for the *existing*
+  `Strategy` row's symbol/timeframe. It cannot choose the symbol or
+  timeframe; those fields don't exist on the proposal, so there is nothing
+  for the model to get wrong there.
+
+Both `KnowledgeTestProposal.cited_finding_ids` and
+`HypothesisProposal.cited_finding_ids` share `ClaimProposal`'s structural
+pattern: a `field_validator` refuses to construct either object with an
+empty citation list, so an unsupported verdict or hypothesis cannot reach a
+route.
+
+**Structured output, not prose parsing.** All three call
+`client.messages.parse(..., output_format=<the proposal class>)` rather than
+`client.messages.create(...)` plus manual JSON parsing — the SDK validates
+the response against the Pydantic schema itself
+(`app/agents/_common.py:call_claude_structured`), so a malformed response
+raises before a route ever sees it, instead of a partially-parsed proposal
+reaching persistence.
+
+**No code executes, so there is no sandbox.** `StrategySpecProposal` is a
+parameterized DSL — four numbers and a rationale — not a code string. This
+was a deliberate scope decision over the sandboxed-Docker-execution
+alternative `docs/security.md` originally floated (see the README's roadmap
+section for the trade-off). `app.core.codegen.validate_strategy_spec` is the
+deterministic gate: `StrategySpecProposal`'s own validator already makes
+`fast_window <= 0`, `slow_window <= 0` and `slow_window <= fast_window`
+impossible to construct, so `validate_strategy_spec` only checks what
+construction does *not* already guarantee — an upper bound on window size
+and a non-negative trade-count threshold. `/projects/{id}/validate-code`
+creates a new `Strategy` version (`created_by="agent:claude-opus-5"`) only
+when this deterministic check passes; an invalid proposal is recorded
+(`GeneratedStrategyCode.validated=False`) but produces no new `Strategy` row
+at all. Symbol/timeframe allowlist checks are not this validator's job
+either — `app.core.risk.assess_strategy` still checks those later, at
+`RISK_REVIEW`, exactly as it does for a manually-specified strategy.
+
+**Engine-run records, not a second review workflow.** `KnowledgeTest`,
+`Hypothesis` and `GeneratedStrategyCode` do not have their own accept/reject
+route the way `ResearchFinding` does — they behave like `Backtest`/
+`RiskAssessment` from Phase 2: a persisted verdict an operator reads before
+deciding whether to advance the state machine. Adding a second review layer
+here would duplicate the trust gate that already exists further downstream
+(risk review, human approval, kill switch) without changing what it
+protects against.
+
 ## Layers
 
 ```
@@ -147,10 +214,12 @@ app/
 │   ├── state_machine.py Orchestrator: table check, guards, audit, commit.
 │   ├── audit.py         Hash-chained append-only log.
 │   ├── backtest.py      SMA crossover simulation + acceptance rule.
-│   └── risk.py          Strategy- and order-level risk checks.
+│   ├── risk.py          Strategy- and order-level risk checks.
+│   └── codegen.py       Deterministic StrategySpecProposal validation.
 ├── brokers/           BrokerAdapter + AlpacaPaperBroker + MockBroker.
 ├── marketdata/        MarketDataProvider + YFinanceProvider + the bar cache.
-├── agents/            ResearchAgent + ClaudeResearchAgent. No DB import.
+├── agents/            ResearchAgent, KnowledgeTestAgent, HypothesisAgent,
+│                       StrategyCodeAgent + Claude implementations. No DB import.
 ├── api/               HTTP routes. Thin; no domain logic.
 └── web/               Jinja2 console.
 ```

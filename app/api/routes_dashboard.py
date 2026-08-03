@@ -23,6 +23,9 @@ from app.db.models import (
     ApprovalKind,
     AuditEvent,
     Backtest,
+    GeneratedStrategyCode,
+    Hypothesis,
+    KnowledgeTest,
     Order,
     Project,
     ResearchFinding,
@@ -159,6 +162,21 @@ def project_detail(
             .order_by(ResearchFinding.created_at.desc())
         )
     )
+    latest_knowledge_test = db.scalars(
+        select(KnowledgeTest)
+        .where(KnowledgeTest.project_id == project_id)
+        .order_by(KnowledgeTest.created_at.desc())
+    ).first()
+    latest_hypothesis = db.scalars(
+        select(Hypothesis)
+        .where(Hypothesis.project_id == project_id)
+        .order_by(Hypothesis.created_at.desc())
+    ).first()
+    latest_generated_code = db.scalars(
+        select(GeneratedStrategyCode)
+        .where(GeneratedStrategyCode.project_id == project_id)
+        .order_by(GeneratedStrategyCode.created_at.desc())
+    ).first()
 
     return templates.TemplateResponse(
         request,
@@ -178,6 +196,9 @@ def project_detail(
             "orders": orders,
             "approval_kinds": approval_kinds,
             "findings": findings,
+            "latest_knowledge_test": latest_knowledge_test,
+            "latest_hypothesis": latest_hypothesis,
+            "latest_generated_code": latest_generated_code,
             "research_agent_configured": settings.anthropic_api_key is not None,
             "csrf_token": _csrf(session),
         },

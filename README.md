@@ -7,18 +7,17 @@ education, research, backtesting and paper trading.
 > path. `QUANTLAB_TRADING_MODE` accepts only `paper`; any other value is a
 > start-up failure. Nothing here is investment advice.
 
-**Status: Phases 1–4 of 6 complete.** The foundation (config, logging, DB,
+**Status: Phases 1–5 of 6 complete.** The foundation (config, logging, DB,
 orchestrator state machine, authentication, console), Phase 2 (market data,
 an MA strategy engine, a backtest/acceptance engine, a risk engine, a mock
 broker, and the approval workflow), Phase 3 (an Alpaca paper broker adapter
-alongside the mock one) and Phase 4 (a Claude-backed research agent with
-citation tracking and a per-project knowledge base) are built and tested.
-Phase 4 gives real content to `RESEARCHING` and review access during
-`KNOWLEDGE_REVIEW` only — `KNOWLEDGE_TESTING`, `HYPOTHESIS_DEVELOPMENT`,
-`CODE_GENERATION` and `CODE_VALIDATION` remain label-only transitions;
-a knowledge test, hypothesis generator and sandboxed codegen are Phase 5.
-`PERFORMANCE_REVIEW` remains label-only too — that and strategy versioning
-are Phase 6. See [Roadmap](#roadmap).
+alongside the mock one), Phase 4 (a Claude-backed research agent with
+citation tracking and a per-project knowledge base) and Phase 5 (a knowledge
+test, a hypothesis generator and DSL-based strategy code generation, all
+Claude-backed) are built and tested. Every pipeline stage through
+`CODE_VALIDATION` now has a real engine behind it — only `PERFORMANCE_REVIEW`
+remains label-only, along with strategy versioning; both are Phase 6. See
+[Roadmap](#roadmap).
 
 ## Quick start
 
@@ -63,7 +62,7 @@ Compose runs `alembic upgrade head` before starting the app and binds only to
 ### Running the checks
 
 ```bash
-pytest                # 157 tests
+pytest                # 189 tests
 ruff check .          # lint
 mypy app              # strict type checking
 ```
@@ -103,6 +102,8 @@ LLM agents  ──proposals──▶  Orchestrator (FSM)  ──▶  Backtest �
 | Acceptance engine | Deterministic verdict (`app/core/backtest.py`) a model may explain but never override. |
 | Broker adapter | Mock by default (`app/brokers/mock.py`) or Alpaca paper (`app/brokers/alpaca.py`), selected by `QUANTLAB_BROKER_BACKEND`. Order submission always passes through the risk engine first. |
 | Research agent | Claude-backed (`app/agents/claude.py`), returns a Pydantic `ResearchProposal` only — no DB session, no credentials beyond its own API key. Every claim requires at least one citation (Pydantic-enforced); findings persist as `pending` until an operator accepts or rejects them. |
+| Knowledge test / hypothesis agents | Claude-backed, closed-book (no web search) — reason only over a project's already-accepted findings. Every verdict/hypothesis must cite at least one accepted finding (Pydantic-enforced). |
+| Code generation | Claude proposes numeric SMA-window parameters only (`StrategySpecProposal`) — a parameterized DSL, not free-form code, so there is nothing to sandbox. `app/core/codegen.py` deterministically validates the proposal; a new `Strategy` version is created only when validation passes. |
 | Audit log | Append-only, SHA-256 hash-chained, secrets redacted before storage. |
 | Human approval | Only rows written by an authenticated `Operator` count — recorded via `/projects/{id}/approvals`. |
 | Kill switch | Boots engaged. Absent flag is read as engaged. |
@@ -151,12 +152,18 @@ and an `approved` row in `approvals` written by an authenticated operator.
 `STRATEGY_SPECIFICATION`, `BACKTESTING`, `RISK_REVIEW` and order submission
 inside `PAPER_TRADING` have real engines behind them (`app/core/backtest.py`,
 `app/core/risk.py`, `app/brokers/`) rather than being a bare label move.
-`RESEARCHING` and `KNOWLEDGE_REVIEW` now have a real research agent behind
-them too (`app/agents/claude.py`) — running a question and reviewing its
-findings via `/projects/{id}/research` and `/projects/{id}/findings/{id}/review`.
-`KNOWLEDGE_TESTING`/`HYPOTHESIS_DEVELOPMENT`, `CODE_GENERATION`/
-`CODE_VALIDATION` (Phase 5) and `PERFORMANCE_REVIEW` (Phase 6) are still
-label-only — moving through them records a transition but runs no engine yet.
+`RESEARCHING` and `KNOWLEDGE_REVIEW` have a real research agent behind them
+(`app/agents/claude.py`) — running a question and reviewing its findings via
+`/projects/{id}/research` and `/projects/{id}/findings/{id}/review`.
+`KNOWLEDGE_TESTING`, `HYPOTHESIS_DEVELOPMENT`, `CODE_GENERATION` and
+`CODE_VALIDATION` now have real engines too: a closed-book knowledge-test
+agent, a hypothesis-synthesis agent, a strategy-code-generation agent, and a
+deterministic validator (`app/core/codegen.py`) that gates whether a new
+`Strategy` version gets created — see
+`/projects/{id}/knowledge-tests`, `/projects/{id}/hypotheses`,
+`/projects/{id}/generate-code` and `/projects/{id}/validate-code`.
+`PERFORMANCE_REVIEW` (Phase 6) is the only stage still label-only — moving
+through it records a transition but runs no engine yet.
 
 ## Environment variables
 
@@ -204,8 +211,8 @@ the grant makes it *hard*. See [docs/security.md](docs/security.md).
 | 2 | Market data, MA strategy, backtest engine, risk engine, mock broker, approvals | **complete** |
 | 3 | Alpaca paper adapter, account verification, reconciliation | **complete** |
 | 4 | Research agent, citation tracking, knowledge base | **complete** |
-| 5 | Knowledge test, hypothesis generator, sandboxed codegen | next |
-| 6 | Performance review, experiment tracking, strategy versioning | |
+| 5 | Knowledge test, hypothesis generator, strategy code generation | **complete** |
+| 6 | Performance review, experiment tracking, strategy versioning | next |
 
 The two decisions the README previously flagged before Phase 2 are settled:
 
@@ -220,6 +227,13 @@ The two decisions the README previously flagged before Phase 2 are settled:
    the out-of-sample trade count clears that threshold **and** the strategy
    beat its buy-and-hold benchmark over the same window. See
    [docs/architecture.md](docs/architecture.md).
+3. **Phase 5 code generation: a parameterized DSL, not free-form code in a
+   sandbox.** `docs/security.md` originally floated a Docker sandbox
+   (`--network none`, cgroup limits, non-root, `--cap-drop ALL`, ...) for
+   arbitrary generated Python. Instead, `StrategySpecProposal` constrains the
+   agent to numeric SMA-window parameters only — the same demonstration of
+   "an LLM proposes, deterministic code validates and gates" with no code
+   execution risk at all, and no sandbox to build, maintain or ever get wrong.
 
 ## Disclaimer
 

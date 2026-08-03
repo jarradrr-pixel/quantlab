@@ -89,6 +89,53 @@
 {% endif %}
 </div>
 
+<h2>Knowledge test</h2>
+<div class="card">
+{% if not research_agent_configured %}
+<p class="muted" style="margin-top:0">Research agent not configured — set QUANTLAB_ANTHROPIC_API_KEY to enable.</p>
+{% endif %}
+{% if latest_knowledge_test %}
+<p class="mono" style="margin-top:0">
+  <span class="tag {{ 'live' if latest_knowledge_test.verdict == 'supported' else ('stop' if latest_knowledge_test.verdict == 'contradicted' else '') }}">{{ latest_knowledge_test.verdict }}</span>
+  {{ latest_knowledge_test.question }}
+</p>
+<p class="muted" style="font-size:13px">{{ latest_knowledge_test.reasoning }}</p>
+{% else %}
+<p class="muted" style="margin-top:0">No knowledge test run yet.</p>
+{% endif %}
+{% if current_state.value == "KNOWLEDGE_TESTING" %}
+<form method="post" action="/projects/{{ project.id }}/knowledge-tests">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="kt_question">Question to test against accepted findings</label>
+  <textarea id="kt_question" name="question" required maxlength="2000" rows="3"></textarea>
+  <p style="margin:18px 0 0"><button type="submit" {{ "disabled" if not research_agent_configured }}>Run knowledge test</button></p>
+</form>
+{% endif %}
+</div>
+
+<h2>Hypothesis</h2>
+<div class="card">
+{% if not research_agent_configured %}
+<p class="muted" style="margin-top:0">Research agent not configured — set QUANTLAB_ANTHROPIC_API_KEY to enable.</p>
+{% endif %}
+{% if latest_hypothesis %}
+<p class="mono" style="margin-top:0">{{ latest_hypothesis.statement }}</p>
+<p class="muted" style="font-size:13px">{{ latest_hypothesis.rationale }}</p>
+{% else %}
+<p class="muted" style="margin-top:0">No hypothesis proposed yet.</p>
+{% endif %}
+{% if current_state.value == "HYPOTHESIS_DEVELOPMENT" %}
+<form method="post" action="/projects/{{ project.id }}/hypotheses">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="muted" style="font-size:13px">
+    Synthesizes the research objective, accepted findings and knowledge test results
+    into one testable hypothesis.
+  </p>
+  <p style="margin:18px 0 0"><button type="submit" {{ "disabled" if not research_agent_configured }}>Propose hypothesis</button></p>
+</form>
+{% endif %}
+</div>
+
 <h2>Strategy</h2>
 <div class="card">
 {% if strategy %}
@@ -120,6 +167,56 @@
   </p>
   <p style="margin:18px 0 0"><button type="submit">{{ "Respecify" if strategy else "Specify strategy" }}</button></p>
 </form>
+</div>
+
+<h2>Generated code</h2>
+<div class="card">
+{% if not research_agent_configured %}
+<p class="muted" style="margin-top:0">Research agent not configured — set QUANTLAB_ANTHROPIC_API_KEY to enable.</p>
+{% endif %}
+{% if latest_generated_code %}
+<p class="mono" style="margin-top:0">
+  {% if latest_generated_code.validated is none %}
+  <span class="tag">PENDING</span>
+  {% elif latest_generated_code.validated %}
+  <span class="tag live">VALID</span>
+  {% else %}
+  <span class="tag stop">INVALID</span>
+  {% endif %}
+  fast {{ latest_generated_code.fast_window }} / slow {{ latest_generated_code.slow_window }} ·
+  min out-of-sample trades {{ latest_generated_code.minimum_out_of_sample_trades }}
+</p>
+<p class="muted" style="font-size:13px">{{ latest_generated_code.rationale }}</p>
+{% if latest_generated_code.validation_reasons %}
+<ul class="muted" style="margin:6px 0">
+  {% for reason in latest_generated_code.validation_reasons %}<li>{{ reason }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% if latest_generated_code.produced_strategy %}
+<p class="muted" style="font-size:13px">Produced strategy v{{ latest_generated_code.produced_strategy.version }}.</p>
+{% endif %}
+{% else %}
+<p class="muted" style="margin-top:0">No code generated yet.</p>
+{% endif %}
+{% if current_state.value == "CODE_GENERATION" %}
+<form method="post" action="/projects/{{ project.id }}/generate-code">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="muted" style="font-size:13px">
+    Proposes refined fast/slow windows for the current strategy from the accepted hypothesis.
+  </p>
+  <p style="margin:18px 0 0">
+    <button type="submit" {{ "disabled" if not research_agent_configured or not strategy or not latest_hypothesis }}>Generate code</button>
+  </p>
+</form>
+{% endif %}
+{% if current_state.value == "CODE_VALIDATION" %}
+<form method="post" action="/projects/{{ project.id }}/validate-code">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p style="margin:18px 0 0">
+    <button type="submit" {{ "disabled" if not latest_generated_code }}>Validate code</button>
+  </p>
+</form>
+{% endif %}
 </div>
 
 <h2>Backtest</h2>

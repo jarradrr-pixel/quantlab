@@ -71,17 +71,23 @@ GRANT INSERT, SELECT ON audit_events TO quantlab_app;
 The hash chain makes tampering detectable; the grant makes it hard. Use them
 together.
 
-## Sandbox for generated code (Phase 5)
+## Generated strategy code has no sandbox, because it has no code (Phase 5)
 
-Generated strategy code is the largest attack surface in the design. When it
-lands it must run with `--network none`, a read-only data mount, a tmpfs
-scratch directory, `--pids-limit`, CPU and memory caps, a wall-clock timeout, a
-non-root user, `--cap-drop ALL` and `--security-opt no-new-privileges`, and
-with no environment inherited from the host.
+This section originally specced a Docker sandbox (`--network none`, a
+read-only data mount, a tmpfs scratch directory, `--pids-limit`, CPU/memory
+caps, a wall-clock timeout, a non-root user, `--cap-drop ALL`,
+`--security-opt no-new-privileges`, no inherited environment) for executing
+LLM-generated Python. That path was not taken.
 
-Worth considering before building it: a parameterised strategy DSL that the
-model fills in achieves the same demonstration with far less exposure than
-free-form Python execution.
+Instead, `app.agents.strategy_code.ClaudeStrategyCodeAgent` returns a
+`StrategySpecProposal` — four numbers (`fast_window`, `slow_window`,
+`minimum_out_of_sample_trades`) and a rationale string, validated by
+`app.core.codegen.validate_strategy_spec` before it can produce a new
+`Strategy` version. There is no code string anywhere in this path, so there
+is nothing to execute and nothing to sandbox. The parameterized-DSL
+alternative this section used to flag as "worth considering" is what got
+built; see `docs/architecture.md`'s "Knowledge test, hypothesis and code
+generation agents" section for the full design.
 
 ## Known limitations
 
