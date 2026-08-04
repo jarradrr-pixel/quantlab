@@ -6,7 +6,10 @@ the endpoint into its own module namespace, and because this project uses
 endpoint's dependency annotations. An explicit throttle is also easier to test.
 
 This is in-process and per-worker. It raises the cost of online password
-guessing; it is not a substitute for rate limiting at the reverse proxy.
+guessing; it is not a substitute for rate limiting at the reverse proxy --
+see ``nginx.conf``'s ``limit_req`` zone, the real, shared-state limit for
+the Docker Compose deployment. This one still matters underneath it: it is
+what protects any deployment that runs the app without that proxy in front.
 """
 
 from __future__ import annotations

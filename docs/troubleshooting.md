@@ -148,6 +148,17 @@ created from whatever the account's equity is at that point.
 No, not as shipped. It's a local development/staging convenience: it never
 sets `QUANTLAB_ENVIRONMENT=production`, so `Settings`' production-strictness
 validator (which would reject `debug=true`, an insecure session cookie, or a
-non-Postgres database URL) never runs against this path, and there is no TLS
-termination anywhere in `docker-compose.yml`. Put a real reverse proxy with
-TLS in front before exposing it beyond `127.0.0.1`.
+non-Postgres database URL) never runs against this path. The `proxy` (nginx)
+service exists for shared-state login rate limiting (`nginx.conf`'s
+`limit_req`), not TLS — there is still no certificate or TLS termination
+anywhere in this stack. Put a real TLS-terminating proxy in front before
+exposing it beyond `127.0.0.1`, or extend `nginx.conf` yourself.
+
+**Login is refused with 429 immediately, before 5 attempts**
+Under `docker compose`, `/login` is rate-limited twice: nginx's `limit_req`
+zone (`nginx.conf`, shared across the app's workers) and the app's own
+in-memory `RateLimiter` (`app/rate_limit.py`, per-process) both default to
+5/minute and both return 429 with a similar message. If they're not exactly
+in sync (e.g. you changed `QUANTLAB_LOGIN_RATE_LIMIT` without updating
+`nginx.conf`'s `rate=5r/m`), whichever is stricter wins. Update both
+together.

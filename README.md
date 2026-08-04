@@ -53,7 +53,15 @@ docker compose up --build
 ```
 
 Compose runs `alembic upgrade head` before starting the app and binds only to
-`127.0.0.1:8000`. The database port is not published to the host.
+`127.0.0.1:8000`. The database port is not published to the host. An nginx
+`proxy` service (`nginx.conf`) is the only container with a published port —
+the app itself is no longer reachable except through it, which is what
+closes the "login throttling is per-worker and in-process" limitation for
+this deployment: nginx's `limit_req` zone is shared across requests
+regardless of how many app workers or replicas sit behind it, unlike the
+application's own in-process `RateLimiter`. See
+[docs/security.md](docs/security.md)'s "Account lockout" and rate-limiting
+notes.
 
 > Not verified in this environment: the Docker path was written but not
 > executed, because no Docker daemon was available. The application itself,

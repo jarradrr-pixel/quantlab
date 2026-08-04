@@ -112,8 +112,16 @@ generation agents" section for the full design.
 
 ## Known limitations
 
-- Login throttling is per-worker and in-process. Behind multiple workers, put
-  real rate limiting at the reverse proxy.
+- `app.rate_limit.RateLimiter` (used for the anonymous, IP-keyed login
+  throttle ahead of account lockout) is still in-memory and per-process by
+  design — correct for one worker, but each additional app worker or
+  replica would keep its own independent counter if reached directly. The
+  Docker Compose path closes this: `nginx.conf`'s `limit_req` zone lives in
+  nginx's own shared memory and is the only entry point (the app's port is
+  no longer published to the host), so it is the real, authoritative limit
+  regardless of app worker count. Deploying without that compose file — a
+  bare `docker run`, a different orchestrator — means putting equivalent
+  protection at whatever sits in front instead.
 - No second factor. Account lockout (above) covers sustained password
   guessing; a second factor is still a reasonable addition on top of it.
 - No log shipping. Audit records live in the same database as the data they

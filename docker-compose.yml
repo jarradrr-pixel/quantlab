@@ -25,14 +25,30 @@ services:
     env_file: .env
     environment:
       QUANTLAB_DATABASE_URL: postgresql+psycopg://quantlab:quantlab@db:5432/quantlab
-    ports:
-      - "127.0.0.1:8000:8000"
+    # Not published to the host -- proxy is the only entry point now, which
+    # is what makes --forwarded-allow-ips='*' below safe: nothing but the
+    # proxy container can ever connect to this service, so nothing but the
+    # proxy can ever supply the X-Forwarded-For it trusts.
+    expose:
+      - "8000"
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
     security_opt:
       - no-new-privileges:true
     read_only: false
+
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:8000:80"
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   pgdata:
