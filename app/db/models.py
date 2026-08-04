@@ -5,7 +5,8 @@ audit chain. Phase 3: broker account snapshots and reconciliation runs.
 Phase 2: market data cache, strategies, backtests, risk assessments and the
 internal order ledger. Phase 4: research findings and their citations.
 Phase 5: knowledge tests, hypotheses and agent-generated strategy code.
-Phase 6: performance reviews.
+Phase 6: performance reviews. Hardening pass: account lockout fields on
+Operator, and daily equity marks for the max_daily_loss_percentage check.
 """
 
 from __future__ import annotations
@@ -60,6 +61,12 @@ class Operator(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Set once ``failed_login_count`` reaches ``Settings.login_lockout_threshold``.
+    Cleared on the next login attempt after it passes, or on a successful login."""
 
     approvals: Mapped[list[Approval]] = relationship(back_populates="operator")
 
@@ -619,3 +626,26 @@ class PerformanceReview(Base):
 
     project: Mapped[Project] = relationship()
     strategy: Mapped[Strategy | None] = relationship()
+
+
+class DailyEquityMark(Base):
+    """The first observed broker account equity of a UTC calendar day.
+
+    Account-wide, not project-scoped -- like ``BrokerAccountSnapshot``, there
+    is one broker account regardless of how many projects reference it.
+    Written lazily by ``submit_project_order`` on a project's first order of
+    the day, since there is no scheduled market-open snapshot to read
+    instead. ``app.core.risk.assess_order`` compares the current portfolio
+    value against this row's ``opening_equity`` to enforce
+    ``max_daily_loss_percentage``.
+    """
+
+    __tablename__ = "daily_equity_marks"
+    __table_args__ = (UniqueConstraint("date", name="uq_daily_equity_marks_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    opening_equity: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )

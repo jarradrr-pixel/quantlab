@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     login_rate_limit: str = "5/minute"
     api_rate_limit: str = "120/minute"
 
+    # --- Account lockout --------------------------------------------------
+    login_lockout_threshold: int = 5
+    """Consecutive wrong-password attempts against one operator before it locks."""
+    login_lockout_duration_seconds: int = 900
+    """Persisted on the Operator row -- unlike login_rate_limit's in-memory,
+    per-process counter, this survives a restart or a second worker."""
+
     # --- Bootstrap operator --------------------------------------------
     bootstrap_operator_email: str | None = None
     bootstrap_operator_password: SecretStr | None = None
@@ -141,6 +148,13 @@ class Settings(BaseSettings):
     def _percentages_in_range(cls, value: float) -> float:
         if not 0 < value <= 100:
             raise ValueError("percentage limits must be greater than 0 and at most 100")
+        return value
+
+    @field_validator("login_lockout_threshold", "login_lockout_duration_seconds")
+    @classmethod
+    def _positive_lockout_setting(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("login lockout settings must be at least 1")
         return value
 
     @field_validator("alpaca_paper_base_url")

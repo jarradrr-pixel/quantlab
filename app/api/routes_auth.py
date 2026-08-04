@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, Response, status
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 
 _GENERIC_FAILURE = "Email or password is incorrect."
+_LOCKED_FAILURE = "Too many failed attempts. Try again later."
 
 
 @router.get("/login")
@@ -42,7 +44,10 @@ def login(
     """Authenticate an operator.
 
     Failures are indistinguishable to the caller whether the account is
-    unknown, inactive or the password is wrong.
+    unknown, inactive or the password is wrong -- except once an account is
+    locked, whose distinct response is the accepted trade-off of any lockout
+    mechanism (see docs/security.md). A locked account skips the password
+    check entirely: no Argon2id hashing happens while locked.
     """
     limiter = request.app.state.login_limiter
     key = client_key(request.client.host if request.client else None)
@@ -67,6 +72,36 @@ def login(
         select(Operator).where(Operator.email == normalised)
     ).first()
 
+    now = utcnow()
+    if operator is not None and operator.locked_until is not None:
+        # SQLite returns naive datetimes on read even though utcnow() only
+        # ever stores aware ones -- normalise before comparing, same as
+        # app.core.audit's _canonical_timestamp.
+        locked_until = (
+            operator.locked_until
+            if operator.locked_until.tzinfo is not None
+            else operator.locked_until.replace(tzinfo=UTC)
+        )
+        if locked_until > now:
+            audit = AuditLog(db)
+            audit.record(
+                category=AuditCategory.AUTH,
+                action="login_locked",
+                actor=normalised,
+                payload={"locked_until": locked_until.isoformat()},
+            )
+            db.commit()
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"error": _LOCKED_FAILURE, "title": "Sign in"},
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        # The lock has expired -- this attempt gets a fresh count rather than
+        # a silently-extending lock.
+        operator.failed_login_count = 0
+        operator.locked_until = None
+
     authenticated = (
         operator is not None
         and operator.is_active
@@ -75,6 +110,12 @@ def login(
 
     audit = AuditLog(db)
     if not authenticated or operator is None:
+        if operator is not None and operator.is_active:
+            operator.failed_login_count += 1
+            if operator.failed_login_count >= settings.login_lockout_threshold:
+                operator.locked_until = now + timedelta(
+                    seconds=settings.login_lockout_duration_seconds
+                )
         audit.record(
             category=AuditCategory.AUTH,
             action="login_failed",
@@ -89,6 +130,8 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
+    operator.failed_login_count = 0
+    operator.locked_until = None
     operator.last_login_at = utcnow()
     cookie_value, _ = manager.issue(operator.id)
     audit.record(

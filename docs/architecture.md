@@ -56,12 +56,23 @@ split date. `app.core.backtest.evaluate_acceptance` accepts a backtest iff:
   symbol allowlist, `max_orders_per_day` (counted from that project's `Order`
   rows today), `max_open_positions` (opening a new symbol beyond the limit is
   refused), `max_position_percentage`/`max_total_exposure_percentage` against
-  the proposed order's notional, buying power vs `allow_leverage`, and
-  short-selling vs `allow_shorting`.
+  the proposed order's notional, buying power vs `allow_leverage`,
+  short-selling vs `allow_shorting`, and `max_daily_loss_percentage` against
+  the day's tracked equity.
 
-**Known limitation**: `max_daily_loss_percentage` is not enforced by
-`assess_order` — it would need day-start equity tracking that doesn't exist
-yet. See [docs/security.md](docs/security.md)'s "Known limitations."
+**Day-start equity, for the daily-loss check.** `assess_order` stays pure —
+it takes `day_start_equity` as a plain argument rather than touching the
+database itself. `submit_project_order` supplies it: on a project's first
+order of the UTC calendar day, it creates a `DailyEquityMark` row (account-
+wide, like `BrokerAccountSnapshot`) recording the currently-observed
+`account.portfolio_value` as that day's baseline; later orders the same day
+reuse the same row. There is no scheduled market-open snapshot to read
+instead, so "the first equity value observed today" is the only available
+definition. The check only ever refuses a `buy`, deliberately — the same
+asymmetry as the leverage (buy-only) and shorting (sell-only) checks above:
+a circuit breaker should stop opening new risk once the day has already
+gone bad, not block an operator from closing a losing position to cut
+further loss.
 
 ### Broker adapters (Phase 2 mock, Phase 3 Alpaca)
 

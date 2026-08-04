@@ -6,9 +6,15 @@ RISK_REVIEW pipeline stage, before a backtest's implied trading is trusted)
 and ``assess_order`` (immediately before a broker call, using live account
 state).
 
-Known limitation, documented rather than silently skipped:
-``max_daily_loss_percentage`` is not enforced here -- it needs day-start
-equity tracking that doesn't exist yet. See docs/security.md.
+``max_daily_loss_percentage`` is enforced in ``assess_order`` via its
+``day_start_equity`` parameter -- the caller (``submit_project_order``)
+fetches or lazily creates a ``DailyEquityMark`` row (the first observed
+account equity of the UTC calendar day) and passes its value in, since this
+function stays pure and never touches the database itself. The check only
+ever refuses a ``buy``, deliberately: a circuit breaker should stop opening
+new risk once the day has already gone bad, not block an operator from
+closing a losing position to cut further loss -- the same asymmetry the
+leverage (buy-only) and shorting (sell-only) checks below already use.
 """
 
 from __future__ import annotations
@@ -57,6 +63,7 @@ def assess_order(
     account: BrokerAccount,
     positions: list[BrokerPosition],
     orders_today: int,
+    day_start_equity: Decimal,
     settings: Settings,
 ) -> RiskVerdict:
     reasons: list[str] = []
@@ -115,5 +122,17 @@ def assess_order(
             f"order notional {notional} exceeds buying power {account.buying_power} "
             "and leverage is disabled"
         )
+
+    if side == "buy" and day_start_equity > 0:
+        daily_loss_pct = (
+            (day_start_equity - account.portfolio_value) / day_start_equity * 100
+        )
+        max_daily_loss_pct = Decimal(str(settings.max_daily_loss_percentage))
+        if daily_loss_pct > max_daily_loss_pct:
+            reasons.append(
+                f"today's portfolio loss is {daily_loss_pct:.2f}%, exceeding "
+                f"max_daily_loss_percentage of {settings.max_daily_loss_percentage}% -- "
+                "opening new positions is refused for the rest of the day"
+            )
 
     return RiskVerdict(approved=not reasons, reasons=reasons)

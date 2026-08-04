@@ -1,0 +1,14 @@
+# Keeps secrets and irrelevant bulk out of the build context sent to the
+# Docker daemon -- layer contents aside, an image build with no
+# .dockerignore still transmits everything in this directory over the
+# socket, .env and .git history included.
+.git/
+.env
+*.db
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.claude/

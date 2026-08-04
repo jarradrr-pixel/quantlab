@@ -126,3 +126,28 @@ excluded from every version's review).
 The page groups every `Backtest`/`RiskAssessment`/`Order`/`PerformanceReview`
 by `Strategy` version; with zero strategies specified there is nothing to
 group. Specify a strategy via `STRATEGY_SPECIFICATION` first.
+
+**`Too many failed attempts. Try again later.` (429) on `/login`**
+The operator hit `login_lockout_threshold` (default 5) consecutive wrong
+passwords and is locked for `login_lockout_duration_seconds` (default 900).
+The correct password is refused too while locked — this is by design, not a
+bug. Wait out the lock, or an administrator can clear it directly (set
+`Operator.locked_until` to `NULL`). See
+[docs/security.md](docs/security.md)'s "Account lockout."
+
+**Order refused: `today's portfolio loss is N%, exceeding max_daily_loss_percentage`**
+The account's tracked equity has dropped more than `max_daily_loss_percentage`
+(default 1.0%) since the first order of the UTC calendar day — see
+`app.core.performance`'s sibling mechanism in `docs/architecture.md`'s "Risk
+engine" section for how that baseline (`DailyEquityMark.opening_equity`) is
+captured. Only `buy` orders are refused; submit a `sell` to reduce exposure
+instead, or wait for the next UTC day, when a fresh `DailyEquityMark` gets
+created from whatever the account's equity is at that point.
+
+**Is `docker compose up` safe to expose beyond localhost?**
+No, not as shipped. It's a local development/staging convenience: it never
+sets `QUANTLAB_ENVIRONMENT=production`, so `Settings`' production-strictness
+validator (which would reject `debug=true`, an insecure session cookie, or a
+non-Postgres database URL) never runs against this path, and there is no TLS
+termination anywhere in `docker-compose.yml`. Put a real reverse proxy with
+TLS in front before exposing it beyond `127.0.0.1`.

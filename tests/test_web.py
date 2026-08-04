@@ -6,9 +6,12 @@ contacts a broker.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import routes_auth
 from tests.conftest import TEST_PASSWORD, csrf_from
 
 PROTECTED_PATHS = ["/", "/audit", "/settings", "/kill-switch", "/broker"]
@@ -63,6 +66,101 @@ def test_successful_login_sets_a_session_cookie(client: TestClient) -> None:
     assert "quantlab_session" in cookie_header
     assert "HttpOnly" in cookie_header
     assert "SameSite=lax" in cookie_header
+
+
+def test_repeated_wrong_passwords_lock_the_account(client: TestClient) -> None:
+    for _ in range(5):
+        response = client.post(
+            "/login",
+            data={"email": "operator@example.test", "password": "definitely-wrong"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 401
+
+    locked = client.post(
+        "/login",
+        data={"email": "operator@example.test", "password": "definitely-wrong"},
+        follow_redirects=False,
+    )
+    assert locked.status_code == 429
+    assert "Too many failed attempts" in locked.text
+
+    audit_page = client.post(
+        "/login",
+        data={"email": "operator@example.test", "password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
+    assert audit_page.status_code == 429, "even the correct password is refused while locked"
+
+
+def test_lockout_is_audited(signed_in_client: TestClient) -> None:
+    # signed_in_client's session cookie was issued before any of these
+    # failed attempts -- a subsequent lockout does not invalidate an
+    # already-issued cookie, only new password checks, so it can still be
+    # used to read /audit afterward.
+    for _ in range(6):
+        signed_in_client.post(
+            "/login",
+            data={"email": "operator@example.test", "password": "definitely-wrong"},
+        )
+    assert "login_locked" in signed_in_client.get("/audit").text
+
+
+def test_successful_login_resets_the_lockout_counter(client: TestClient) -> None:
+    for _ in range(3):
+        response = client.post(
+            "/login",
+            data={"email": "operator@example.test", "password": "definitely-wrong"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 401
+
+    success = client.post(
+        "/login",
+        data={"email": "operator@example.test", "password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
+    assert success.status_code == 303
+
+    # If the counter had not reset, 3 (already spent) + 4 more would trip the
+    # 5-attempt threshold on this 4th post-success attempt. It must not.
+    for _ in range(4):
+        response = client.post(
+            "/login",
+            data={"email": "operator@example.test", "password": "definitely-wrong"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 401
+
+
+def test_lockout_expires_and_allows_a_fresh_attempt(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for _ in range(5):
+        client.post(
+            "/login",
+            data={"email": "operator@example.test", "password": "definitely-wrong"},
+        )
+    locked = client.post(
+        "/login",
+        data={"email": "operator@example.test", "password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
+    assert locked.status_code == 429
+
+    # No injectable clock exists for the route itself, so move time forward
+    # by patching the exact name the route calls (routes_auth imported
+    # `utcnow` via `from ... import`, so the module-local reference is what
+    # must be patched, not app.db.base.utcnow).
+    real_utcnow = routes_auth.utcnow
+    monkeypatch.setattr(routes_auth, "utcnow", lambda: real_utcnow() + timedelta(hours=1))
+
+    response = client.post(
+        "/login",
+        data={"email": "operator@example.test", "password": TEST_PASSWORD},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
 
 
 def test_overview_renders_for_signed_in_operator(signed_in_client: TestClient) -> None:

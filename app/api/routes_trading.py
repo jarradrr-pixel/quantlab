@@ -25,6 +25,7 @@ from app.db.models import (
     Approval,
     ApprovalKind,
     Backtest,
+    DailyEquityMark,
     MarketBar,
     Order,
     Project,
@@ -310,6 +311,17 @@ def submit_project_order(
 
     account = broker.get_account()
     positions = broker.list_positions()
+
+    equity_mark = db.scalars(
+        select(DailyEquityMark).where(DailyEquityMark.date == today)
+    ).first()
+    if equity_mark is None:
+        # The first observed equity of the day becomes its baseline -- there
+        # is no scheduled market-open snapshot to read instead.
+        equity_mark = DailyEquityMark(date=today, opening_equity=account.portfolio_value)
+        db.add(equity_mark)
+        db.flush()
+
     verdict = assess_order(
         symbol=symbol,
         side=side,
@@ -318,6 +330,7 @@ def submit_project_order(
         account=account,
         positions=positions,
         orders_today=orders_today,
+        day_start_equity=equity_mark.opening_equity,
         settings=settings,
     )
     if not verdict.approved:

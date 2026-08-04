@@ -62,7 +62,7 @@ Compose runs `alembic upgrade head` before starting the app and binds only to
 ### Running the checks
 
 ```bash
-pytest                # 204 tests
+pytest                # 213 tests
 ruff check .          # lint
 mypy app              # strict type checking
 ```
@@ -188,6 +188,8 @@ a limit name fails loudly instead of silently reverting to a default.
 | `QUANTLAB_MAX_TOTAL_EXPOSURE_PERCENTAGE` | `10.0` | |
 | `QUANTLAB_MAX_DAILY_LOSS_PERCENTAGE` | `1.0` | |
 | `QUANTLAB_MAX_ORDERS_PER_DAY` | `2` | |
+| `QUANTLAB_LOGIN_LOCKOUT_THRESHOLD` | `5` | Consecutive wrong passwords before an account locks. |
+| `QUANTLAB_LOGIN_LOCKOUT_DURATION_SECONDS` | `900` | Persisted on the operator row, unlike the in-memory IP rate limit. |
 | `QUANTLAB_BROKER_BACKEND` | `mock` | `mock` or `alpaca`. `alpaca` requires both Alpaca credentials set. |
 | `QUANTLAB_ALPACA_PAPER_BASE_URL` | Alpaca's paper endpoint | Start-up fails if it's anything else. |
 | `QUANTLAB_ANTHROPIC_API_KEY` | unset | Unset disables the research agent (`/projects/{id}/research` returns 409) — there is no mock substitute for a paid LLM call. |

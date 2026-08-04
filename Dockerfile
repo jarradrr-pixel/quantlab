@@ -9,12 +9,19 @@ WORKDIR /srv/app
 
 RUN groupadd --system quantlab && useradd --system --gid quantlab --home /srv quantlab
 
+# app/ and alembic/ must exist before `pip install .` -- setuptools is told
+# packages = ["app", "app.agents", ...] in pyproject.toml and fails the
+# build if that directory isn't present yet at install time.
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
-
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
+RUN pip install --upgrade pip && pip install .
+
+# WORKDIR itself is created (and COPY'd into) as root; chown it, not just
+# the files, so the sqlite fallback can create quantlab.db here as the
+# non-root user below.
+RUN chown -R quantlab:quantlab /srv
 
 USER quantlab
 

@@ -82,6 +82,15 @@ def bootstrap_database(settings: Settings) -> None:
                     payload={"email": email},
                 )
                 logger.info("bootstrap operator created")
+        elif session.query(Operator).count() == 0:
+            # Not a start-up failure -- an existing deployment may add
+            # operators through other means -- but a fresh database with no
+            # operator and no bootstrap credentials configured is silently
+            # unusable (the container reports healthy; nobody can sign in).
+            logger.warning(
+                "no bootstrap operator configured and no operators exist yet -- "
+                "set QUANTLAB_BOOTSTRAP_OPERATOR_EMAIL/PASSWORD or nobody can sign in"
+            )
 
         # Mirrors the seed row in alembic/versions/7a2c4e91b3f0_..._.py -- kept as
         # a literal here (not imported from the migration) because migrations

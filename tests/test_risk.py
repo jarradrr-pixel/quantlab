@@ -74,6 +74,7 @@ def test_order_approved_within_all_limits() -> None:
         account=_account(),
         positions=[],
         orders_today=0,
+        day_start_equity=Decimal("100000"),
         settings=_settings(),
     )
     assert verdict.approved is True
@@ -88,6 +89,7 @@ def test_order_refused_for_a_disallowed_symbol() -> None:
         account=_account(),
         positions=[],
         orders_today=0,
+        day_start_equity=Decimal("100000"),
         settings=_settings(),
     )
     assert verdict.approved is False
@@ -102,6 +104,7 @@ def test_order_refused_when_exceeding_max_position_percentage() -> None:
         account=_account(),
         positions=[],
         orders_today=0,
+        day_start_equity=Decimal("100000"),
         settings=_settings(),
     )
     assert verdict.approved is False
@@ -117,6 +120,7 @@ def test_order_refused_at_max_orders_per_day() -> None:
         account=_account(),
         positions=[],
         orders_today=2,
+        day_start_equity=Decimal("100000"),
         settings=_settings(),
     )
     assert verdict.approved is False
@@ -139,6 +143,7 @@ def test_order_refused_opening_a_new_symbol_at_max_open_positions() -> None:
         account=_account(),
         positions=[existing],
         orders_today=0,
+        day_start_equity=Decimal("100000"),
         settings=_settings(allowed_symbols=["SPY", "QQQ"]),
     )
     assert verdict.approved is False
@@ -154,6 +159,7 @@ def test_short_sale_refused_without_allow_shorting() -> None:
         account=_account(),
         positions=[],
         orders_today=0,
+        day_start_equity=Decimal("100000"),
         settings=_settings(),
     )
     assert verdict.approved is False
@@ -176,6 +182,7 @@ def test_sell_within_an_existing_long_position_is_approved() -> None:
         account=_account(portfolio_value=Decimal("100000")),
         positions=[existing],
         orders_today=0,
+        day_start_equity=Decimal("100000"),
         settings=_settings(),
     )
     assert verdict.approved is True
@@ -194,7 +201,83 @@ def test_order_refused_exceeding_buying_power_without_leverage() -> None:
         ),
         positions=[],
         orders_today=0,
+        day_start_equity=Decimal("1000000"),
         settings=_settings(max_position_percentage=100.0, max_total_exposure_percentage=100.0),
     )
     assert verdict.approved is False
     assert any("buying power" in r for r in verdict.reasons)
+
+
+# --- max_daily_loss_percentage ----------------------------------------------
+
+
+def test_buy_refused_when_daily_loss_exceeds_threshold() -> None:
+    # Down 2% today; default max_daily_loss_percentage is 1.0%.
+    verdict = assess_order(
+        symbol="SPY",
+        side="buy",
+        qty=Decimal("1"),
+        price=Decimal("500"),
+        account=_account(portfolio_value=Decimal("98000")),
+        positions=[],
+        orders_today=0,
+        day_start_equity=Decimal("100000"),
+        settings=_settings(),
+    )
+    assert verdict.approved is False
+    assert any("max_daily_loss_percentage" in r for r in verdict.reasons)
+
+
+def test_sell_still_approved_when_daily_loss_exceeds_threshold() -> None:
+    # Same losing day as above, but a sell -- cutting further loss is never
+    # blocked by this check, only opening new risk is.
+    existing = BrokerPosition(
+        symbol="SPY",
+        qty=Decimal("5"),
+        side="long",
+        market_value=Decimal("2450"),
+        avg_entry_price=Decimal("500"),
+    )
+    verdict = assess_order(
+        symbol="SPY",
+        side="sell",
+        qty=Decimal("1"),
+        price=Decimal("490"),
+        account=_account(portfolio_value=Decimal("98000")),
+        positions=[existing],
+        orders_today=0,
+        day_start_equity=Decimal("100000"),
+        settings=_settings(),
+    )
+    assert verdict.approved is True
+
+
+def test_buy_approved_when_daily_loss_under_threshold() -> None:
+    # Down 0.5% today, under the default 1.0% threshold.
+    verdict = assess_order(
+        symbol="SPY",
+        side="buy",
+        qty=Decimal("1"),
+        price=Decimal("500"),
+        account=_account(portfolio_value=Decimal("99500")),
+        positions=[],
+        orders_today=0,
+        day_start_equity=Decimal("100000"),
+        settings=_settings(),
+    )
+    assert verdict.approved is True
+
+
+def test_zero_day_start_equity_does_not_crash() -> None:
+    verdict = assess_order(
+        symbol="SPY",
+        side="buy",
+        qty=Decimal("1"),
+        price=Decimal("500"),
+        account=_account(),
+        positions=[],
+        orders_today=0,
+        day_start_equity=Decimal("0"),
+        settings=_settings(),
+    )
+    assert verdict.approved is True

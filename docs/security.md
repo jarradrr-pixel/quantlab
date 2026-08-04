@@ -45,6 +45,27 @@ and `Secure` unless explicitly disabled for local plain-HTTP development.
 Failures return one message for unknown accounts, inactive accounts and wrong
 passwords alike, and a test asserts the responses are indistinguishable.
 
+### Account lockout
+
+An operator with `login_lockout_threshold` (default 5) consecutive
+wrong-password attempts is locked for `login_lockout_duration_seconds`
+(default 900) — persisted on the `Operator` row (`failed_login_count`,
+`locked_until`), not the in-memory, per-process `RateLimiter` used for
+IP-based throttling above, which would not survive a restart or a second
+worker. A locked account skips the password check entirely while locked
+(no Argon2id hashing spent on an attempt that cannot succeed), and the
+counter resets on the next attempt after the lock expires, or immediately
+on a successful login.
+
+**This is the one place a response is deliberately distinguishable.** A
+lockout response (429, "Too many failed attempts") differs from the generic
+wrong-password response (401, "Email or password is incorrect"), which
+marginally reveals that an account exists after enough failed guesses. This
+is the standard, accepted trade-off of any lockout mechanism — OWASP ASVS
+treats it as such — the alternative is no protection against sustained
+credential guessing at all. Unknown emails are unaffected either way: there
+is no `Operator` row to count failures against.
+
 ## CSRF
 
 Every state-changing form carries a per-session token compared with
@@ -93,13 +114,10 @@ generation agents" section for the full design.
 
 - Login throttling is per-worker and in-process. Behind multiple workers, put
   real rate limiting at the reverse proxy.
-- No account lockout or second factor. Both are reasonable additions.
+- No second factor. Account lockout (above) covers sustained password
+  guessing; a second factor is still a reasonable addition on top of it.
 - No log shipping. Audit records live in the same database as the data they
   describe; a compromise of that database is a compromise of both.
-- `app.core.risk.assess_order` does not enforce `max_daily_loss_percentage`.
-  Every other configured limit (position size, total exposure, order count,
-  open positions, shorting, leverage) is checked; this one would need
-  day-start equity tracking that doesn't exist yet.
 - `app.core.performance.compute_order_performance` realizes P&L only on
   closed round-trip trades from a strategy version's own filled orders. It
   does not mark-to-market a position still open, and a sell fill with no
