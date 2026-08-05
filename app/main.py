@@ -188,8 +188,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if _wants_html(request):
             return templates.TemplateResponse(
                 request,
-                "base.html",
-                {"title": "Error", "operator": None},
+                "error.html",
+                {"title": "Error", "operator": None, "detail": exc.detail},
                 status_code=exc.status_code,
                 headers={"X-Error-Detail": str(exc.detail)[:200]},
             )

@@ -35,6 +35,9 @@ def settings(tmp_path: Path) -> Settings:
         session_cookie_secure=False,
         kill_switch_engaged_on_boot=True,
         login_rate_limit="1000/minute",
+        # Explicitly unset rather than inherited: a real key in the developer's
+        # own .env must never let tests reach the live Anthropic API.
+        anthropic_api_key=None,
     )
 
 
@@ -102,8 +105,14 @@ def client(
     """A TestClient wired to the temporary database.
 
     ``get_settings`` is cached, so the cache is cleared and the environment is
-    populated before the application is constructed.
+    populated before the application is constructed. The developer's own
+    ``.env`` is never a valid input here -- a real key left in it (e.g.
+    ``QUANTLAB_ANTHROPIC_API_KEY``) must not leak into what's meant to be an
+    isolated settings environment, so its ``env_file`` is disabled for the
+    duration of this fixture and every field the tests rely on is set
+    explicitly below instead.
     """
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
     monkeypatch.setenv("QUANTLAB_ENVIRONMENT", "test")
     monkeypatch.setenv("QUANTLAB_DATABASE_URL", settings.database_url)
     monkeypatch.setenv("QUANTLAB_SECRET_KEY", "test-secret-key-not-used-anywhere-real")
